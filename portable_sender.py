@@ -325,6 +325,51 @@ FORTINET_SAMPLES = [
 
     # ssl: SSL negotiation
     '<45>date=2024-12-16 time=18:17:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373050000000000 tz="+0000" logid="1700062004" type="utm" subtype="ssl" level="information" vd="root" srcip=10.20.30.120 srcport=57600 srcintf="port5" srcintfrole="lan" dstip=198.51.100.200 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=31700500 proto=6 action="accept" policyid=8 service="HTTPS" hostname="api.vendor.example.com" ssl_version="TLSv1.3" ssl_cipher="TLS_AES_256_GCM_SHA384" msg="SSL negotiation completed successfully"',
+
+    # =====================================================================
+    # LAB ENVIRONMENT TRAFFIC (WARP-DUCK lab machines)
+    # Kali 10.3.108.21 | Ubuntu 10.3.108.40 | Unmanaged 10.3.108.27
+    # Protect 10.3.108.30 | Detect 10.3.108.31
+    # =====================================================================
+
+    # Lab: Protect machine normal HTTPS browsing
+    '<45>date=2024-12-16 time=18:21:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373260000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.3.108.30 srcport=55100 srcintf="port5" srcintfrole="lan" dstip=142.250.80.46 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40200100 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip=54.245.154.50 transport=55100 app="Google.Services" appcat="web.client" duration=45 sentbyte=8200 rcvdbyte=125000 sentpkt=35 rcvdpkt=95 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # Lab: Ubuntu machine apt update
+    '<45>date=2024-12-16 time=18:22:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373320000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.3.108.40 srcport=43500 srcintf="port5" srcintfrole="lan" dstip=91.189.91.49 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United Kingdom" sessionid=40200200 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip=52.36.101.231 transport=43500 app="Ubuntu.Update" appcat="network.service" duration=15 sentbyte=2400 rcvdbyte=450000 sentpkt=12 rcvdpkt=320 osname="Linux" srcswversion="Ubuntu 22.04" mastersrcmac="aa:bb:cc:00:01:40" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # Lab: Detect machine normal Office365 traffic
+    '<45>date=2024-12-16 time=18:22:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373350000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.3.108.31 srcport=51200 srcintf="port5" srcintfrole="lan" dstip=52.96.166.130 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40200300 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip=18.236.136.74 transport=51200 app="Microsoft.Office.365" appcat="web.client" duration=180 sentbyte=32000 rcvdbyte=890000 sentpkt=120 rcvdpkt=650 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # Lab: Unmanaged machine SSH to external (suspicious)
+    '<45>date=2024-12-16 time=18:23:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373380000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip=10.3.108.27 srcport=61400 srcintf="port5" srcintfrole="lan" dstip=45.33.32.156 dstport=22 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40200400 proto=6 action="accept" policyid=5 policytype="policy" service="SSH" trandisp="snat" transip=34.220.166.46 transport=61400 app="SSH" appcat="network.service" duration=300 sentbyte=45000 rcvdbyte=28000 sentpkt=200 rcvdpkt=180 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
+
+    # Lab: Kali -> Detect internal port scan (IPS)
+    '<45>date=2024-12-16 time=18:24:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373440000000000 tz="+0000" logid="0419016384" type="utm" subtype="ips" level="alert" vd="root" srcip=10.3.108.21 srcport=0 srcintf="port5" srcintfrole="lan" dstip=10.3.108.31 dstport=0 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=0 proto=6 action="dropped" policyid=10 service="tcp" attack="Portscan.Detection" severity="medium" attackid=18432 msg="anomaly: port scan detected from internal host"',
+
+    # Lab: Kali -> Unmanaged lateral movement attempt (SMB)
+    '<45>date=2024-12-16 time=18:24:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373470000000000 tz="+0000" logid="0419016384" type="utm" subtype="ips" level="alert" vd="root" srcip=10.3.108.21 srcport=44500 srcintf="port5" srcintfrole="lan" dstip=10.3.108.27 dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40300100 proto=6 action="dropped" policyid=10 service="SMB" attack="MS.SMB.Server.Trans.Peeking.Data.Information.Disclosure" severity="critical" attackid=42888 msg="IPS signature matched: SMB exploitation attempt"',
+
+    # =====================================================================
+    # DETECTION TRIGGER: Generic - Web - Suspicious HTTP GET Requests
+    # Post-compromise recon from Detect machine (10.3.108.31)
+    # Correlated with Mimecast phishing email to emily.jones@warp-duck.lab
+    # =====================================================================
+
+    # TRIGGER: GET /proc/self/environ on C2 server
+    '<45>date=2024-12-16 time=18:25:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373500000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" srcip=10.3.108.31 srcport=52100 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400100 proto=6 action="passthrough" policyid=5 service="HTTP" hostname="c2-callback.example.com" url="/proc/self/environ" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+
+    # TRIGGER: GET /etc/passwd
+    '<45>date=2024-12-16 time=18:25:05 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373505000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" srcip=10.3.108.31 srcport=52102 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400102 proto=6 action="passthrough" policyid=5 service="HTTP" hostname="c2-callback.example.com" url="/etc/passwd" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+
+    # TRIGGER: GET /etc/group
+    '<45>date=2024-12-16 time=18:25:10 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373510000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" srcip=10.3.108.31 srcport=52104 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400104 proto=6 action="passthrough" policyid=5 service="HTTP" hostname="c2-callback.example.com" url="/etc/security/passwd" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+
+    # Post-compromise: C2 callback from Detect to external attacker
+    '<45>date=2024-12-16 time=18:25:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373530000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.3.108.31 srcport=49200 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=4443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400200 proto=6 action="accept" policyid=5 policytype="policy" service="tcp/4443" trandisp="snat" transip=18.236.136.74 transport=49200 app="SSL" appcat="network.service" duration=120 sentbyte=15000 rcvdbyte=85000 sentpkt=45 rcvdpkt=120 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
+
+    # Post-compromise: Data exfiltration (large upload to external)
+    '<45>date=2024-12-16 time=18:26:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373560000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.3.108.31 srcport=49250 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400300 proto=6 action="close" policyid=5 policytype="policy" service="HTTPS" trandisp="snat" transip=18.236.136.74 transport=49250 app="SSL" appcat="network.service" duration=60 sentbyte=5200000 rcvdbyte=4500 sentpkt=3800 rcvdpkt=45 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
 ]
 
 
@@ -423,6 +468,38 @@ MIMECAST_SAMPLES = [
 
     # TTP Attachment: Suspicious archive
     '{"datetime":"2024-12-16T18:07:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<att002@external.example.net>","Subject":"Requested Files","headerFrom":"vendor@external.example.net","Sender":"vendor@external.example.net","Rcpt":"procurement@recipient.example.com","Act":"Hld","FileName":"requested_files.zip","FileExt":"zip","FileSz":2100000,"SandboxResult":"suspicious","SandboxDetail":"Archive contains password-protected executable","Confidence":"medium","Route":"inbound","msg":"Suspicious archive attachment held for review"}',
+
+    # =====================================================================
+    # LAB ENVIRONMENT TRAFFIC (warp-duck.lab)
+    # Correlated with FortiGate attack scenario on Detect 10.3.108.31
+    # =====================================================================
+
+    # Legitimate: Internal IT notification
+    '{"datetime":"2024-12-16T18:10:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<it-notice-001@warp-duck.lab>","Subject":"Scheduled Maintenance Window - Saturday 2am","headerFrom":"it-ops@warp-duck.lab","Sender":"it-ops@warp-duck.lab","Rcpt":"all-staff@warp-duck.lab","Act":"Acc","AttNames":"N/A","AttCnt":0,"AttSz":0,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":3200}',
+
+    # Legitimate: External partner email
+    '{"datetime":"2024-12-16T18:11:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<partner-001@acme-corp.com>","Subject":"Re: Joint Project Timeline","headerFrom":"pm@acme-corp.com","Sender":"pm@acme-corp.com","Rcpt":"emily.jones@warp-duck.lab","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":15600,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # Legitimate: Outbound from lab user
+    '{"datetime":"2024-12-16T18:12:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<outbound-001@warp-duck.lab>","Subject":"Updated Network Diagram","headerFrom":"admin@warp-duck.lab","Sender":"admin@warp-duck.lab","Rcpt":"vendor-support@external.example.com","Act":"Acc","AttNames":"network_diagram_v2.pdf","AttCnt":1,"AttSz":2400000,"Route":"outbound","Dir":"Outbound","Hld":"N","HldRsn":"N/A","MsgSz":2450000}',
+
+    # =====================================================================
+    # DETECTION TRIGGER: Mimecast Suspicious Attachment Type Detected
+    # Phishing email with .xlsm macro-enabled attachment to Detect user
+    # Correlated with FortiGate suspicious HTTP GETs from 10.3.108.31
+    # =====================================================================
+
+    # TRIGGER (process): Phishing with .xlsm accepted — attacker -> emily.jones
+    '{"datetime":"2024-12-16T18:15:00+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@warp-duck.lab","Act":"Acc","AttNames":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
+
+    # TRIGGER (delivery): Same phishing email delivered successfully
+    '{"datetime":"2024-12-16T18:15:02+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@warp-duck.lab","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.warp-duck.lab","TlsVer":"TLSv1.3","Latency":850,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # TRIGGER (process): Second phishing with .html credential harvester
+    '{"datetime":"2024-12-16T18:16:00+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@warp-duck.lab","Act":"Acc","AttNames":"password_reset_form.html","AttCnt":1,"AttSz":8200,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":25,"SpfResult":"neutral","DkimResult":"pass","IP":"104.20.145.30","MsgSz":12800}',
+
+    # TRIGGER (delivery): Second phishing delivered
+    '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@warp-duck.lab","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.warp-duck.lab","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 ]
 
 
@@ -470,6 +547,67 @@ def rewrite_mimecast_timestamps(line):
 REWRITE_FN = {
     "fortinet": rewrite_fortinet_timestamps,
     "mimecast": rewrite_mimecast_timestamps,
+}
+
+
+###########################################################################
+#                       FIELD RANDOMIZATION                               #
+###########################################################################
+
+RE_SRCPORT = re.compile(r'srcport=\d+')
+RE_SESSIONID = re.compile(r'sessionid=\d+')
+RE_SENTBYTE = re.compile(r'sentbyte=\d+')
+RE_RCVDBYTE = re.compile(r'rcvdbyte=\d+')
+RE_SENTPKT = re.compile(r'sentpkt=\d+')
+RE_RCVDPKT = re.compile(r'rcvdpkt=\d+')
+RE_DURATION_VAL = re.compile(r'(?<=\s)duration=\d+')
+RE_MC_MSGSZ = re.compile(r'"MsgSz"\s*:\s*\d+')
+RE_MC_LATENCY = re.compile(r'"Latency"\s*:\s*\d+')
+RE_MC_ATTSZ = re.compile(r'"AttSz"\s*:\s*\d+')
+RE_MC_FILESZ = re.compile(r'"FileSz"\s*:\s*\d+')
+
+
+def _vary(match, lo=0.7, hi=1.3, minimum=1):
+    """Vary a key=value numeric field by ±30%."""
+    text = match.group()
+    eq = text.index('=')
+    field = text[:eq + 1]
+    val = int(text[eq + 1:])
+    return f'{field}{max(minimum, int(val * random.uniform(lo, hi)))}'
+
+
+def _vary_json(match, lo=0.7, hi=1.3, minimum=1):
+    """Vary a JSON numeric field by ±30%."""
+    text = match.group()
+    parts = text.rsplit(':', 1)
+    val = int(parts[1].strip())
+    return f'{parts[0]}:{max(minimum, int(val * random.uniform(lo, hi)))}'
+
+
+def randomize_fortinet(line):
+    """Add realistic variation to FortiGate log fields."""
+    line = RE_SRCPORT.sub(lambda m: f'srcport={random.randint(49152, 65535)}', line)
+    line = RE_SESSIONID.sub(lambda m: f'sessionid={random.randint(10000000, 99999999)}', line)
+    line = RE_SENTBYTE.sub(_vary, line)
+    line = RE_RCVDBYTE.sub(_vary, line)
+    line = RE_SENTPKT.sub(_vary, line)
+    line = RE_RCVDPKT.sub(_vary, line)
+    line = RE_DURATION_VAL.sub(lambda m: _vary(m, 0.5, 2.0), line)
+    return line
+
+
+def randomize_mimecast(line):
+    """Add realistic variation to Mimecast log fields."""
+    line = RE_MC_MSGSZ.sub(lambda m: _vary_json(m), line)
+    line = RE_MC_LATENCY.sub(lambda m: _vary_json(m, 0.5, 3.0), line)
+    line = RE_MC_ATTSZ.sub(lambda m: _vary_json(m), line)
+    line = RE_MC_FILESZ.sub(lambda m: _vary_json(m), line)
+    return line
+
+
+RANDOMIZE_FN = {
+    "fortinet": randomize_fortinet,
+    "mimecast": randomize_mimecast,
 }
 
 
@@ -654,6 +792,7 @@ def main():
     failed = 0
     for i, (v, port, raw) in enumerate(queue):
         rewritten = REWRITE_FN[v](raw)
+        rewritten = RANDOMIZE_FN[v](rewritten)
         label = extract_log_label(v, rewritten)
         try:
             send_one_log(args.host, port, rewritten)
