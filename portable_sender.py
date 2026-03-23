@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
 
 
 def load_config(path):
-    """Load config from JSON file, merge with defaults."""
+    """Load config from JSON file, merge with defaults, then apply env vars."""
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
     if path and os.path.isfile(path):
         with open(path, 'r') as f:
@@ -86,6 +86,25 @@ def load_config(path):
                     cfg['lab']['machines'][role].update(info)
                 else:
                     cfg['lab']['machines'][role] = info
+
+    # Environment variables override config file / defaults
+    if os.environ.get('SYSLOG_HOST'):
+        cfg['syslog_host'] = os.environ['SYSLOG_HOST']
+    if os.environ.get('FORTINET_PORT'):
+        cfg['vendors']['fortinet']['port'] = int(os.environ['FORTINET_PORT'])
+    if os.environ.get('MIMECAST_PORT'):
+        cfg['vendors']['mimecast']['port'] = int(os.environ['MIMECAST_PORT'])
+    if os.environ.get('LAB_DOMAIN'):
+        cfg['lab']['domain'] = os.environ['LAB_DOMAIN']
+    # Machine IPs: DETECT_IP, DETECT_EXT_IP, ATTACKER_IP, etc.
+    for role in list(cfg['lab']['machines'].keys()):
+        env_ip = os.environ.get(f'{role.upper()}_IP')
+        env_ext = os.environ.get(f'{role.upper()}_EXT_IP')
+        if env_ip:
+            cfg['lab']['machines'][role]['ip'] = env_ip
+        if env_ext:
+            cfg['lab']['machines'][role]['ext_ip'] = env_ext
+
     return cfg
 
 
