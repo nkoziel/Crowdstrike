@@ -4,8 +4,11 @@ Portable Multi-Vendor Syslog Sender — No dependencies, just Python 3.
 Sends realistic logs via TCP syslog to Onum with live timestamps.
 
 Supported vendors:
-  - fortinet   FortiGate syslog (all subtypes)
-  - mimecast   Mimecast pipe-delimited logs
+  - fortinet   FortiGate syslog (all subtypes)       default port 514
+  - mimecast   Mimecast pipe-delimited logs           default port 514
+
+Each vendor has its own port config. Use --vendor all to send both
+vendors simultaneously (interleaved), each to its own port.
 
 Each log gets its timestamp fields rewritten to the exact moment it is
 sent so the downstream parser accepts them.
@@ -13,6 +16,7 @@ sent so the downstream parser accepts them.
 Usage:
     python3 portable_sender.py                          # 10 FortiGate logs
     python3 portable_sender.py --vendor mimecast        # 10 Mimecast logs
+    python3 portable_sender.py --vendor all             # Both vendors
     python3 portable_sender.py --count 50               # Send 50 logs
     python3 portable_sender.py --csv path.csv           # Use custom CSV
     python3 portable_sender.py --delay 1.0              # 1s between logs
@@ -24,6 +28,7 @@ import re
 import sys
 import time
 import argparse
+import random
 from datetime import datetime, timezone
 
 # -- Configuration ---------------------------------------------------------
@@ -429,10 +434,12 @@ VENDOR_REGISTRY = {
     "fortinet": {
         "description": "FortiGate syslog (traffic, event, UTM/security)",
         "samples": FORTINET_SAMPLES,
+        "port": SYSLOG_PORT,
     },
     "mimecast": {
         "description": "Mimecast email security logs (pipe-delimited)",
         "samples": MIMECAST_SAMPLES,
+        "port": SYSLOG_PORT,
     },
 }
 
@@ -538,6 +545,7 @@ def send_one_log(host, port, message):
 ###########################################################################
 
 def main():
+    vendor_choices = list(VENDOR_REGISTRY.keys()) + ["all"]
     p = argparse.ArgumentParser(
         description="Portable Multi-Vendor Syslog Sender",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -545,21 +553,22 @@ def main():
             "examples:\n"
             "  %(prog)s                              # 10 FortiGate logs\n"
             "  %(prog)s --vendor mimecast --count 20 # 20 Mimecast logs\n"
+            "  %(prog)s --vendor all --count 0        # all samples, both vendors\n"
             "  %(prog)s --list-vendors                # show vendors\n"
         ),
     )
     p.add_argument('--host', default=SYSLOG_HOST,
                    help=f'Syslog host (default: {SYSLOG_HOST})')
-    p.add_argument('--port', type=int, default=SYSLOG_PORT,
-                   help=f'Syslog port (default: {SYSLOG_PORT})')
+    p.add_argument('--port', type=int, default=None,
+                   help='Syslog port override (default: per-vendor port)')
     p.add_argument('--count', type=int, default=10,
-                   help='Number of logs to send, 0=all samples once (default: 10)')
+                   help='Number of logs to send per vendor, 0=all samples once (default: 10)')
     p.add_argument('--csv', type=str, default=None,
                    help='CSV file with raw logs (optional, overrides built-in samples)')
     p.add_argument('--delay', type=float, default=0.5,
                    help='Delay in seconds between each log (default: 0.5)')
     p.add_argument('--vendor', type=str, default='fortinet',
-                   choices=list(VENDOR_REGISTRY.keys()),
+                   choices=vendor_choices,
                    help='Vendor log format to send (default: fortinet)')
     p.add_argument('--list-vendors', action='store_true',
                    help='List supported vendors and exit')
@@ -571,72 +580,79 @@ def main():
         for name, info in VENDOR_REGISTRY.items():
             samples = info["samples"]
             print(f"  {name:<12}  {info['description']}")
-            print(f"               {len(samples)} built-in samples")
+            print(f"               {len(samples)} built-in samples, default port {info['port']}")
+        print(f"\n  {'all':<12}  Send all vendors interleaved (each to its own port)")
         print()
         return 0
 
-    # -- Resolve vendor ----------------------------------------------------
-    vendor = args.vendor.lower()
-    if vendor not in VENDOR_REGISTRY:
-        print(f"ERROR: Unknown vendor '{vendor}'. Use --list-vendors.")
-        return 1
-
-    vendor_info = VENDOR_REGISTRY[vendor]
-    rewrite = REWRITE_FN[vendor]
-    builtin = vendor_info["samples"]
-
-    # -- Load logs ---------------------------------------------------------
-    if args.csv:
-        limit = args.count if args.count > 0 else None
-        logs = load_csv(args.csv, limit)
-        print(f"Loaded {len(logs)} logs from {args.csv}")
+    # -- Determine which vendors to send -----------------------------------
+    if args.vendor.lower() == "all":
+        vendors_to_send = list(VENDOR_REGISTRY.keys())
     else:
-        if args.count == 0:
-            # Send every sample exactly once
-            logs = list(builtin)
-        else:
-            # Cycle through samples to fill the requested count
-            logs = []
-            idx = 0
-            while len(logs) < args.count:
-                logs.append(builtin[idx % len(builtin)])
-                idx += 1
-        print(f"Using {len(logs)} {vendor} sample logs "
-              f"({len(builtin)} unique samples)")
+        vendor = args.vendor.lower()
+        if vendor not in VENDOR_REGISTRY:
+            print(f"ERROR: Unknown vendor '{vendor}'. Use --list-vendors.")
+            return 1
+        vendors_to_send = [vendor]
 
-    if not logs:
+    # -- Build the send queue: list of (vendor, port, raw_line) tuples -----
+    queue = []
+    for v in vendors_to_send:
+        info = VENDOR_REGISTRY[v]
+        port = args.port if args.port is not None else info["port"]
+        builtin = info["samples"]
+
+        if args.csv and len(vendors_to_send) == 1:
+            limit = args.count if args.count > 0 else None
+            lines = load_csv(args.csv, limit)
+            print(f"Loaded {len(lines)} logs from {args.csv}")
+        else:
+            if args.count == 0:
+                lines = list(builtin)
+            else:
+                lines = []
+                idx = 0
+                while len(lines) < args.count:
+                    lines.append(builtin[idx % len(builtin)])
+                    idx += 1
+            print(f"  {v}: {len(lines)} logs ({len(builtin)} unique samples) -> port {port}")
+
+        for line in lines:
+            queue.append((v, port, line))
+
+    if not queue:
         print("ERROR: No logs to send")
         return 1
 
+    # Interleave vendors when sending all (shuffle so they mix naturally)
+    if len(vendors_to_send) > 1:
+        random.shuffle(queue)
+
     # -- Resolve DNS once --------------------------------------------------
     ip = socket.gethostbyname(args.host)
-    print(f"\nVendor:  {vendor}")
-    print(f"Target:  {args.host} ({ip}):{args.port}")
-    print(f"Count:   {len(logs)}")
+    print(f"\nHost:    {args.host} ({ip})")
+    print(f"Vendors: {', '.join(vendors_to_send)}")
+    print(f"Total:   {len(queue)} logs")
     print(f"Delay:   {args.delay}s")
-
-    # Show timestamp rewrite example
-    sample = rewrite(logs[0])
-    print(f"Sample:  {sample[:120]}...")
     print()
 
     # -- Send each log on its own connection (like nc -q) ------------------
     sent = 0
     failed = 0
-    for i, raw in enumerate(logs):
-        rewritten = rewrite(raw)
-        label = extract_log_label(vendor, rewritten)
+    for i, (v, port, raw) in enumerate(queue):
+        rewritten = REWRITE_FN[v](raw)
+        label = extract_log_label(v, rewritten)
         try:
-            send_one_log(args.host, args.port, rewritten)
+            send_one_log(args.host, port, rewritten)
             sent += 1
             ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-            print(f"  [{ts}] Sent {i+1}/{len(logs)} OK  "
-                  f"[{label}]  ({len(rewritten)} bytes)")
+            print(f"  [{ts}] Sent {i+1}/{len(queue)} OK  "
+                  f"[{v}:{port}] [{label}]  ({len(rewritten)} bytes)")
         except Exception as e:
             failed += 1
-            print(f"  [{i+1}/{len(logs)}] FAILED [{label}]: {e}")
+            print(f"  [{i+1}/{len(queue)}] FAILED [{v}:{port}] [{label}]: {e}")
 
-        if args.delay > 0 and i < len(logs) - 1:
+        if args.delay > 0 and i < len(queue) - 1:
             time.sleep(args.delay)
 
     print(f"\nDone: {sent} sent, {failed} failed")
