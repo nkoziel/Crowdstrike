@@ -476,90 +476,90 @@ MIMECAST_SAMPLES = [
     # =====================================================================
 
     # Receipt: Message accepted with TLS, SPF pass, DKIM pass
-    '{"datetime":"2024-12-16T17:50:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<msg001@sender.example.com>","Subject":"Quarterly Report Q4","headerFrom":"finance@sender.example.com","Sender":"finance@sender.example.com","senderEnvelope":"finance@sender.example.com","Rcpt":"john.doe@recipient.example.com","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":1,"SpamInfo":"virus score=clean","SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.25","Dir":"Inbound","MsgSz":45200,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T17:50:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<msg001@sender.example.com>","Subject":"Quarterly Report Q4","headerFrom":"finance@sender.example.com","Sender":"finance@sender.example.com","senderEnvelope":"finance@sender.example.com","Rcpt":"john.doe@recipient.example.com","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":1,"SpamInfo":"virus score=clean","SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.25","Dir":"Inbound","MsgSz":45200,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # Receipt: Message rejected - spam
-    '{"datetime":"2024-12-16T17:51:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<spam001@spammer.example.net>","Subject":"YOU HAVE WON $10000000","headerFrom":"prize@spammer.example.net","Sender":"prize@spammer.example.net","senderEnvelope":"bounce@spammer.example.net","Rcpt":"jane.smith@recipient.example.com","Act":"Rej","TlsVer":"TLSv1.2","Cphr":"ECDHE-RSA-AES256-GCM-SHA384","SpamScore":98,"SpamInfo":"virus score=dirty, spam score=98, phish score=high","SpfResult":"fail","DkimResult":"fail","IP":"203.0.113.77","Dir":"Inbound","MsgSz":12400,"RejType":"spam","RejCode":"550","RejInfo":"Message rejected due to spam content"}',
+    '{"datetime":"2024-12-16T17:51:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<spam001@spammer.example.net>","Subject":"YOU HAVE WON $10000000","headerFrom":"prize@spammer.example.net","Sender":"prize@spammer.example.net","senderEnvelope":"bounce@spammer.example.net","Rcpt":"jane.smith@recipient.example.com","Act":"Rej","TlsVer":"TLSv1.2","Cphr":"ECDHE-RSA-AES256-GCM-SHA384","SpamScore":98,"SpamInfo":"virus score=dirty, spam score=98, phish score=high","SpfResult":"fail","DkimResult":"fail","IP":"203.0.113.77","Dir":"Inbound","MsgSz":12400,"RejType":"spam","RejCode":"550","RejInfo":"Message rejected due to spam content"}',
 
     # Receipt: Outbound message accepted
-    '{"datetime":"2024-12-16T17:52:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<out001@company.example.com>","Subject":"Re: Project Update","headerFrom":"alice.wong@company.example.com","Sender":"alice.wong@company.example.com","senderEnvelope":"alice.wong@company.example.com","Rcpt":"partner@external.example.com","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_128_GCM_SHA256","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"10.0.0.50","Dir":"Outbound","MsgSz":8500,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T17:52:00+0000","aCode":"acc1002","acc":"C0A1","type":"receipt","MsgId":"<out001@company.example.com>","Subject":"Re: Project Update","headerFrom":"alice.wong@company.example.com","Sender":"alice.wong@company.example.com","senderEnvelope":"alice.wong@company.example.com","Rcpt":"partner@external.example.com","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_128_GCM_SHA256","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"10.0.0.50","Dir":"Outbound","MsgSz":8500,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # =====================================================================
     # Process logs - with/without attachments, held for review
     # =====================================================================
 
     # Process: With attachment
-    '{"datetime":"2024-12-16T17:53:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<proc001@sender.example.com>","Subject":"Invoice #INV-2024-0891","headerFrom":"billing@sender.example.com","Sender":"billing@sender.example.com","Rcpt":"accounts@recipient.example.com","Act":"Prc","AttNames":"invoice_2024_0891.pdf","AttCnt":1,"AttSz":125000,"Route":"inbound","Hld":"N","HldRsn":"N/A"}',
+    '{"datetime":"2024-12-16T17:53:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<proc001@sender.example.com>","Subject":"Invoice #INV-2024-0891","headerFrom":"billing@sender.example.com","Sender":"billing@sender.example.com","Rcpt":"accounts@recipient.example.com","Act":"Prc","attachments":"invoice_2024_0891.pdf","AttCnt":1,"AttSz":125000,"Route":"inbound","Hld":"N","HldRsn":"N/A"}',
 
     # Process: Without attachment
-    '{"datetime":"2024-12-16T17:54:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<proc002@company.example.com>","Subject":"Meeting Tomorrow at 3pm","headerFrom":"bob.chen@company.example.com","Sender":"bob.chen@company.example.com","Rcpt":"team@company.example.com","Act":"Prc","AttNames":"N/A","AttCnt":0,"AttSz":0,"Route":"internal","Hld":"N","HldRsn":"N/A"}',
+    '{"datetime":"2024-12-16T17:54:00+0000","aCode":"acc1002","acc":"C0A1","type":"process","MsgId":"<proc002@company.example.com>","Subject":"Meeting Tomorrow at 3pm","headerFrom":"bob.chen@company.example.com","Sender":"bob.chen@company.example.com","Rcpt":"team@company.example.com","Act":"Prc","attachments":"N/A","AttCnt":0,"AttSz":0,"Route":"internal","Hld":"N","HldRsn":"N/A"}',
 
     # Process: Held for review (spam)
-    '{"datetime":"2024-12-16T17:55:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<proc003@marketing.example.net>","Subject":"Limited Time Offer - Act Now!!!","headerFrom":"deals@marketing.example.net","Sender":"deals@marketing.example.net","Rcpt":"info@recipient.example.com","Act":"Hld","AttNames":"offer_brochure.pdf","AttCnt":1,"AttSz":310000,"Route":"inbound","Hld":"Y","HldRsn":"Suspected spam content detected - held for admin review"}',
+    '{"datetime":"2024-12-16T17:55:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<proc003@marketing.example.net>","Subject":"Limited Time Offer - Act Now!!!","headerFrom":"deals@marketing.example.net","Sender":"deals@marketing.example.net","Rcpt":"info@recipient.example.com","Act":"Hld","attachments":"offer_brochure.pdf","AttCnt":1,"AttSz":310000,"Route":"inbound","Hld":"Y","HldRsn":"Suspected spam content detected - held for admin review"}',
 
     # =====================================================================
     # Delivery logs - successful / failed
     # =====================================================================
 
     # Delivery: Successful
-    '{"datetime":"2024-12-16T17:56:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<del001@sender.example.com>","Subject":"Weekly Status Report","headerFrom":"manager@sender.example.com","Sender":"manager@sender.example.com","Rcpt":"team-lead@recipient.example.com","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.recipient.example.com","TlsVer":"TLSv1.3","Latency":1200,"Attempt":1,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T17:56:00+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","MsgId":"<del001@sender.example.com>","Subject":"Weekly Status Report","headerFrom":"manager@sender.example.com","Sender":"manager@sender.example.com","Rcpt":"team-lead@recipient.example.com","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.recipient.example.com","TlsVer":"TLSv1.3","Latency":1200,"Attempt":1,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # Delivery: Failed - timeout
-    '{"datetime":"2024-12-16T17:57:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<del002@company.example.com>","Subject":"Contract Renewal","headerFrom":"legal@company.example.com","Sender":"legal@company.example.com","Rcpt":"partner@unreachable.example.com","Act":"Rej","Dlv":"Failed","DlvTo":"mx01.unreachable.example.com","TlsVer":"N/A","Latency":30000,"Attempt":3,"RejType":"connection_timeout","RejCode":"451","RejInfo":"Connection timed out after 30s on attempt 3"}',
+    '{"datetime":"2024-12-16T17:57:00+0000","aCode":"acc1002","acc":"C0A1","type":"delivery","MsgId":"<del002@company.example.com>","Subject":"Contract Renewal","headerFrom":"legal@company.example.com","Sender":"legal@company.example.com","Rcpt":"partner@unreachable.example.com","Act":"Rej","Dlv":"Failed","DlvTo":"mx01.unreachable.example.com","TlsVer":"N/A","Latency":30000,"Attempt":3,"RejType":"connection_timeout","RejCode":"451","RejInfo":"Connection timed out after 30s on attempt 3"}',
 
     # Delivery: Failed - rejected by remote
-    '{"datetime":"2024-12-16T17:58:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<del003@sender.example.com>","Subject":"Follow Up","headerFrom":"sales@sender.example.com","Sender":"sales@sender.example.com","Rcpt":"nouser@strict-mx.example.com","Act":"Rej","Dlv":"Failed","DlvTo":"mx02.strict-mx.example.com","TlsVer":"TLSv1.2","Latency":800,"Attempt":1,"RejType":"remote_reject","RejCode":"550","RejInfo":"550 5.1.1 The email account that you tried to reach does not exist"}',
+    '{"datetime":"2024-12-16T17:58:00+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","MsgId":"<del003@sender.example.com>","Subject":"Follow Up","headerFrom":"sales@sender.example.com","Sender":"sales@sender.example.com","Rcpt":"nouser@strict-mx.example.com","Act":"Rej","Dlv":"Failed","DlvTo":"mx02.strict-mx.example.com","TlsVer":"TLSv1.2","Latency":800,"Attempt":1,"RejType":"remote_reject","RejCode":"550","RejInfo":"550 5.1.1 The email account that you tried to reach does not exist"}',
 
     # =====================================================================
     # AV logs - virus detected
     # =====================================================================
 
     # AV: Macro malware detected
-    '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<av001@infected.example.net>","Subject":"Urgent - Review Document","headerFrom":"hr@infected.example.net","Sender":"hr@infected.example.net","Rcpt":"employee@recipient.example.com","Act":"Hld","FileName":"employee_review_2024.xlsm","FileExt":"xlsm","FileSz":89000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","msg":"Macro malware detected in Excel attachment"}',
+    '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av001@infected.example.net>","Subject":"Urgent - Review Document","headerFrom":"hr@infected.example.net","Sender":"hr@infected.example.net","Rcpt":"employee@recipient.example.com","Act":"Hld","FileName":"employee_review_2024.xlsm","FileExt":"xlsm","FileSz":89000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","msg":"Macro malware detected in Excel attachment"}',
 
     # AV: Phishing attachment
-    '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<av002@phishing.example.net>","Subject":"Your Package Delivery Notification","headerFrom":"support@delivery.example.net","Sender":"noreply@delivery.example.net","Rcpt":"victim@recipient.example.com","Act":"Rej","FileName":"tracking_details.html","FileExt":"html","FileSz":4500,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","msg":"Phishing content detected in HTML attachment"}',
+    '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1002","acc":"C0A1","type":"av","MsgId":"<av002@phishing.example.net>","Subject":"Your Package Delivery Notification","headerFrom":"support@delivery.example.net","Sender":"noreply@delivery.example.net","Rcpt":"victim@recipient.example.com","Act":"Rej","FileName":"tracking_details.html","FileExt":"html","FileSz":4500,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","msg":"Phishing content detected in HTML attachment"}',
 
     # =====================================================================
     # Spam Event Thread logs
     # =====================================================================
 
     # Spam: Spam detected and quarantined
-    '{"datetime":"2024-12-16T18:01:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<spam002@bulk.example.net>","Subject":"Buy Cheap Pharmaceuticals Online","headerFrom":"offers@bulk.example.net","Sender":"offers@bulk.example.net","Rcpt":"admin@recipient.example.com","Act":"Hld","SpamScore":95,"SpamInfo":"spam score=95, bulk sender, suspicious URL","ScanResult":"spam","Route":"inbound","msg":"Spam detected and quarantined"}',
+    '{"datetime":"2024-12-16T18:01:00+0000","aCode":"acc1001","acc":"C0A0","type":"spam","MsgId":"<spam002@bulk.example.net>","Subject":"Buy Cheap Pharmaceuticals Online","headerFrom":"offers@bulk.example.net","Sender":"offers@bulk.example.net","Rcpt":"admin@recipient.example.com","Act":"Hld","SpamScore":95,"SpamInfo":"spam score=95, bulk sender, suspicious URL","ScanResult":"spam","Route":"inbound","msg":"Spam detected and quarantined"}',
 
     # =====================================================================
     # TTP Internal Email Protect
     # =====================================================================
 
     # TTP Internal: Blocked URL in internal email
-    '{"datetime":"2024-12-16T18:02:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<ttp-int001@company.example.com>","Subject":"Check this out","headerFrom":"compromised.user@company.example.com","Sender":"compromised.user@company.example.com","Rcpt":"coworker@company.example.com","Act":"Hld","URL":"https://evil-phish.example.net/steal-creds","URLCategory":"phishing","ScanResult":"malicious","Route":"internal","msg":"Blocked malicious URL in internal email - possible account compromise"}',
+    '{"datetime":"2024-12-16T18:02:00+0000","aCode":"acc1002","acc":"C0A1","type":"ttp_internal","MsgId":"<ttp-int001@company.example.com>","Subject":"Check this out","headerFrom":"compromised.user@company.example.com","Sender":"compromised.user@company.example.com","Rcpt":"coworker@company.example.com","Act":"Hld","URL":"https://evil-phish.example.net/steal-creds","URLCategory":"phishing","ScanResult":"malicious","Route":"internal","msg":"Blocked malicious URL in internal email - possible account compromise"}',
 
     # =====================================================================
     # TTP Impersonation Protect
     # =====================================================================
 
     # TTP Impersonation: Internal name impersonation
-    '{"datetime":"2024-12-16T18:03:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<imp001@lookalike.example.net>","Subject":"Urgent Wire Transfer Needed","headerFrom":"ceo.name@lookalike.example.net","Sender":"ceo.name@lookalike.example.net","Rcpt":"cfo@recipient.example.com","Act":"Hld","ImpersonationResult":"internal_name_match","ImpersonatedUser":"CEO Name","Confidence":"high","ScanResult":"impersonation","Route":"inbound","msg":"Internal display name impersonation detected - matches CEO identity"}',
+    '{"datetime":"2024-12-16T18:03:00+0000","aCode":"acc1001","acc":"C0A0","type":"ttp_impersonation","MsgId":"<imp001@lookalike.example.net>","Subject":"Urgent Wire Transfer Needed","headerFrom":"ceo.name@lookalike.example.net","Sender":"ceo.name@lookalike.example.net","Rcpt":"cfo@recipient.example.com","Act":"Hld","ImpersonationResult":"internal_name_match","ImpersonatedUser":"CEO Name","Confidence":"high","ScanResult":"impersonation","Route":"inbound","msg":"Internal display name impersonation detected - matches CEO identity"}',
 
     # TTP Impersonation: New external domain
-    '{"datetime":"2024-12-16T18:04:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<imp002@new-vendor.example.org>","Subject":"Updated Bank Details for Payment","headerFrom":"accounts@new-vendor.example.org","Sender":"accounts@new-vendor.example.org","Rcpt":"payables@recipient.example.com","Act":"Hld","ImpersonationResult":"new_domain","ImpersonatedUser":"N/A","Confidence":"medium","ScanResult":"suspicious","Route":"inbound","msg":"Newly registered domain detected requesting payment changes"}',
+    '{"datetime":"2024-12-16T18:04:00+0000","aCode":"acc1001","acc":"C0A0","type":"ttp_impersonation","MsgId":"<imp002@new-vendor.example.org>","Subject":"Updated Bank Details for Payment","headerFrom":"accounts@new-vendor.example.org","Sender":"accounts@new-vendor.example.org","Rcpt":"payables@recipient.example.com","Act":"Hld","ImpersonationResult":"new_domain","ImpersonatedUser":"N/A","Confidence":"medium","ScanResult":"suspicious","Route":"inbound","msg":"Newly registered domain detected requesting payment changes"}',
 
     # =====================================================================
     # TTP URL Protect
     # =====================================================================
 
     # TTP URL: Malicious URL clicked
-    '{"datetime":"2024-12-16T18:05:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<url001@sender.example.com>","Subject":"Reset Your Password","headerFrom":"it-support@sender.example.com","Sender":"it-support@sender.example.com","Rcpt":"user@recipient.example.com","Act":"Blk","URL":"https://credential-harvest.example.net/login","URLCategory":"credential_phishing","UserAction":"clicked","ScanResult":"malicious","UserAwareness":"warned","Route":"inbound","msg":"User clicked malicious URL - access blocked at click time"}',
+    '{"datetime":"2024-12-16T18:05:00+0000","aCode":"acc1002","acc":"C0A1","type":"ttp_url","MsgId":"<url001@sender.example.com>","Subject":"Reset Your Password","headerFrom":"it-support@sender.example.com","Sender":"it-support@sender.example.com","Rcpt":"user@recipient.example.com","Act":"Blk","URL":"https://credential-harvest.example.net/login","URLCategory":"credential_phishing","UserAction":"clicked","ScanResult":"malicious","UserAwareness":"warned","Route":"inbound","msg":"User clicked malicious URL - access blocked at click time"}',
 
     # =====================================================================
     # TTP Attachment Protect
     # =====================================================================
 
     # TTP Attachment: Malicious attachment detected
-    '{"datetime":"2024-12-16T18:06:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<att001@compromised.example.net>","Subject":"Signed Contract Attached","headerFrom":"legal@compromised.example.net","Sender":"legal@compromised.example.net","Rcpt":"contracts@recipient.example.com","Act":"Hld","FileName":"signed_contract.docx","FileExt":"docx","FileSz":67000,"SandboxResult":"malicious","SandboxDetail":"Document contains obfuscated PowerShell dropper","Confidence":"high","Route":"inbound","msg":"Attachment sandbox analysis detected malicious payload"}',
+    '{"datetime":"2024-12-16T18:06:00+0000","aCode":"acc1001","acc":"C0A0","type":"ttp_attachment","MsgId":"<att001@compromised.example.net>","Subject":"Signed Contract Attached","headerFrom":"legal@compromised.example.net","Sender":"legal@compromised.example.net","Rcpt":"contracts@recipient.example.com","Act":"Hld","FileName":"signed_contract.docx","FileExt":"docx","FileSz":67000,"SandboxResult":"malicious","SandboxDetail":"Document contains obfuscated PowerShell dropper","Confidence":"high","Route":"inbound","msg":"Attachment sandbox analysis detected malicious payload"}',
 
     # TTP Attachment: Suspicious archive
-    '{"datetime":"2024-12-16T18:07:00+0000","aCode":"acc1002","acc":"C0A1","MsgId":"<att002@external.example.net>","Subject":"Requested Files","headerFrom":"vendor@external.example.net","Sender":"vendor@external.example.net","Rcpt":"procurement@recipient.example.com","Act":"Hld","FileName":"requested_files.zip","FileExt":"zip","FileSz":2100000,"SandboxResult":"suspicious","SandboxDetail":"Archive contains password-protected executable","Confidence":"medium","Route":"inbound","msg":"Suspicious archive attachment held for review"}',
+    '{"datetime":"2024-12-16T18:07:00+0000","aCode":"acc1002","acc":"C0A1","type":"ttp_attachment","MsgId":"<att002@external.example.net>","Subject":"Requested Files","headerFrom":"vendor@external.example.net","Sender":"vendor@external.example.net","Rcpt":"procurement@recipient.example.com","Act":"Hld","FileName":"requested_files.zip","FileExt":"zip","FileSz":2100000,"SandboxResult":"suspicious","SandboxDetail":"Archive contains password-protected executable","Confidence":"medium","Route":"inbound","msg":"Suspicious archive attachment held for review"}',
 
     # =====================================================================
     # LAB ENVIRONMENT TRAFFIC ({{LAB_DOMAIN}})
@@ -567,13 +567,13 @@ MIMECAST_SAMPLES = [
     # =====================================================================
 
     # Legitimate: Internal IT notification
-    '{"datetime":"2024-12-16T18:10:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<it-notice-001@{{LAB_DOMAIN}}>","Subject":"Scheduled Maintenance Window - Saturday 2am","headerFrom":"it-ops@{{LAB_DOMAIN}}","Sender":"it-ops@{{LAB_DOMAIN}}","Rcpt":"all-staff@{{LAB_DOMAIN}}","Act":"Acc","AttNames":"N/A","AttCnt":0,"AttSz":0,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":3200}',
+    '{"datetime":"2024-12-16T18:10:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<it-notice-001@{{LAB_DOMAIN}}>","Subject":"Scheduled Maintenance Window - Saturday 2am","headerFrom":"it-ops@{{LAB_DOMAIN}}","Sender":"it-ops@{{LAB_DOMAIN}}","Rcpt":"all-staff@{{LAB_DOMAIN}}","Act":"Acc","attachments":"N/A","AttCnt":0,"AttSz":0,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":3200}',
 
     # Legitimate: External partner email
-    '{"datetime":"2024-12-16T18:11:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<partner-001@acme-corp.com>","Subject":"Re: Joint Project Timeline","headerFrom":"pm@acme-corp.com","Sender":"pm@acme-corp.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":15600,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T18:11:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<partner-001@acme-corp.com>","Subject":"Re: Joint Project Timeline","headerFrom":"pm@acme-corp.com","Sender":"pm@acme-corp.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":15600,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # Legitimate: Outbound from lab user
-    '{"datetime":"2024-12-16T18:12:00+0000","aCode":"acc1001","acc":"C0A0","MsgId":"<outbound-001@{{LAB_DOMAIN}}>","Subject":"Updated Network Diagram","headerFrom":"admin@{{LAB_DOMAIN}}","Sender":"admin@{{LAB_DOMAIN}}","Rcpt":"vendor-support@external.example.com","Act":"Acc","AttNames":"network_diagram_v2.pdf","AttCnt":1,"AttSz":2400000,"Route":"outbound","Dir":"Outbound","Hld":"N","HldRsn":"N/A","MsgSz":2450000}',
+    '{"datetime":"2024-12-16T18:12:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<outbound-001@{{LAB_DOMAIN}}>","Subject":"Updated Network Diagram","headerFrom":"admin@{{LAB_DOMAIN}}","Sender":"admin@{{LAB_DOMAIN}}","Rcpt":"vendor-support@external.example.com","Act":"Acc","attachments":"network_diagram_v2.pdf","AttCnt":1,"AttSz":2400000,"Route":"outbound","Dir":"Outbound","Hld":"N","HldRsn":"N/A","MsgSz":2450000}',
 
     # =====================================================================
     # DETECTION TRIGGER: Mimecast Suspicious Attachment Type Detected
@@ -582,16 +582,16 @@ MIMECAST_SAMPLES = [
     # =====================================================================
 
     # TRIGGER (process): Phishing with .xlsm accepted — attacker -> emily.jones
-    '{"datetime":"2024-12-16T18:15:00+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","AttNames":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
+    '{"datetime":"2024-12-16T18:15:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","attachments":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
 
     # TRIGGER (delivery): Same phishing email delivered successfully
-    '{"datetime":"2024-12-16T18:15:02+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":850,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T18:15:02+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":850,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # TRIGGER (process): Second phishing with .html credential harvester
-    '{"datetime":"2024-12-16T18:16:00+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","AttNames":"password_reset_form.html","AttCnt":1,"AttSz":8200,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":25,"SpfResult":"neutral","DkimResult":"pass","IP":"104.20.145.30","MsgSz":12800}',
+    '{"datetime":"2024-12-16T18:16:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","attachments":"password_reset_form.html","AttCnt":1,"AttSz":8200,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":25,"SpfResult":"neutral","DkimResult":"pass","IP":"104.20.145.30","MsgSz":12800}',
 
     # TRIGGER (delivery): Second phishing delivered
-    '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 ]
 
 
