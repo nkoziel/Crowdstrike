@@ -37,11 +37,11 @@ Copy `config.example.json` to `config.json` and fill in your values:
     "lab": {
         "domain": "yourlab.local",
         "machines": {
-            "attacker":  {"ip": "10.0.0.21",  "ext_ip": "203.0.113.21"},
-            "ubuntu":    {"ip": "10.0.0.40",  "ext_ip": "203.0.113.40"},
-            "unmanaged": {"ip": "10.0.0.27",  "ext_ip": "203.0.113.27"},
-            "protect":   {"ip": "10.0.0.30",  "ext_ip": "203.0.113.30"},
-            "detect":    {"ip": "10.0.0.31",  "ext_ip": "203.0.113.31"}
+            "attacker":  {"ip": "YOUR_IP",  "ext_ip": "YOUR_IP"},
+            "ubuntu":    {"ip": "YOUR_IP",  "ext_ip": "YOUR_IP"},
+            "unmanaged": {"ip": "YOUR_IP",  "ext_ip": "YOUR_IP"},
+            "protect":   {"ip": "YOUR_IP",  "ext_ip": "YOUR_IP"},
+            "detect":    {"ip": "YOUR_IP",  "ext_ip": "YOUR_IP"}
         }
     }
 }
