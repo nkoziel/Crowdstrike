@@ -27,8 +27,8 @@ import argparse
 from datetime import datetime, timezone
 
 # -- Configuration ---------------------------------------------------------
-SYSLOG_HOST = "0f783062.in.prod.onum.com"
-SYSLOG_PORT = 2518
+SYSLOG_HOST = "your-tenant.in.prod.onum.com"
+SYSLOG_PORT = 514
 # --------------------------------------------------------------------------
 
 # -- Regex for timestamp rewriting -----------------------------------------
