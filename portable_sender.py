@@ -702,6 +702,52 @@ RANDOMIZE_FN = {
 
 
 ###########################################################################
+#          MIMECAST ECS ENRICHMENT                                        #
+#  The mimecast-emailsecurity parser maps specific field names to ECS.    #
+#  Our samples use abbreviated Mimecast SIEM API names (Act, Rcpt, etc.) #
+#  which land in Vendor.* but don't get ECS-mapped. This function adds   #
+#  the parser-expected field names so ECS fields get populated.           #
+###########################################################################
+
+def enrich_mimecast_ecs(line):
+    """Add parser-expected field names for full ECS mapping."""
+    try:
+        obj = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        return line
+
+    # event.action := lower(Vendor.action)
+    if 'Act' in obj and 'action' not in obj:
+        obj['action'] = obj['Act']
+
+    # email.to.address[] := lower(Vendor.recipientAddress)
+    if 'Rcpt' in obj and 'recipientAddress' not in obj:
+        obj['recipientAddress'] = obj['Rcpt']
+
+    # email.from.address[] := lower(Vendor.senderEnvelope)
+    if 'senderEnvelope' not in obj:
+        obj['senderEnvelope'] = obj.get('Sender', obj.get('headerFrom', ''))
+
+    # email.subject := Vendor.subject  (lowercase key)
+    if 'Subject' in obj and 'subject' not in obj:
+        obj['subject'] = obj['Subject']
+
+    # email.message_id via regex on Vendor.messageId
+    if 'MsgId' in obj and 'messageId' not in obj:
+        obj['messageId'] = obj['MsgId']
+
+    # email.direction := lower(Vendor.direction)
+    if 'Dir' in obj and 'direction' not in obj:
+        obj['direction'] = obj['Dir']
+
+    # event.outcome for process/receipt uses Vendor.subtype
+    if obj.get('type') in ('process', 'receipt') and 'Act' in obj and 'subtype' not in obj:
+        obj['subtype'] = obj['Act']
+
+    return json.dumps(obj)
+
+
+###########################################################################
 #                       LOG SUBTYPE EXTRACTION                            #
 ###########################################################################
 
@@ -914,6 +960,8 @@ def main():
         rewritten = apply_placeholders(raw, placeholders)
         rewritten = REWRITE_FN[v](rewritten)
         rewritten = RANDOMIZE_FN[v](rewritten)
+        if v == "mimecast":
+            rewritten = enrich_mimecast_ecs(rewritten)
         label = extract_log_label(v, rewritten)
         try:
             send_one_log(host, port, rewritten)
