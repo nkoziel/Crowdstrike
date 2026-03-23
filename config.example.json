@@ -1,17 +1,17 @@
 {
     "syslog_host": "your-tenant-id.in.prod.onum.com",
     "vendors": {
-        "fortinet": {"port": 2518},
-        "mimecast": {"port": 2519}
+        "fortinet": {"port": 514},
+        "mimecast": {"port": 514}
     },
     "lab": {
         "domain": "yourlab.local",
         "machines": {
-            "attacker":  {"ip": "10.0.0.21",  "ext_ip": "203.0.113.21"},
-            "ubuntu":    {"ip": "10.0.0.40",  "ext_ip": "203.0.113.40"},
-            "unmanaged": {"ip": "10.0.0.27",  "ext_ip": "203.0.113.27"},
-            "protect":   {"ip": "10.0.0.30",  "ext_ip": "203.0.113.30"},
-            "detect":    {"ip": "10.0.0.31",  "ext_ip": "203.0.113.31"}
+            "attacker":  {"ip": "CHANGE_ME",  "ext_ip": "CHANGE_ME"},
+            "ubuntu":    {"ip": "CHANGE_ME",  "ext_ip": "CHANGE_ME"},
+            "unmanaged": {"ip": "CHANGE_ME",  "ext_ip": "CHANGE_ME"},
+            "protect":   {"ip": "CHANGE_ME",  "ext_ip": "CHANGE_ME"},
+            "detect":    {"ip": "CHANGE_ME",  "ext_ip": "CHANGE_ME"}
         }
     }
 }
