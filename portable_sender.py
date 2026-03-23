@@ -10,6 +10,12 @@ Supported vendors:
 Each vendor has its own port config. Use --vendor all to send both
 vendors simultaneously (interleaved), each to its own port.
 
+When --vendor all --count 0 is used without --csv, logs are sent in
+attack-timeline order (scenario mode): baseline → phishing → compromise
+→ exfiltration, with normal cover traffic mixed in.
+
+Uses persistent TCP connections for fast throughput (~10s for 100+ logs).
+
 Each log gets its timestamp fields rewritten to the exact moment it is
 sent so the downstream parser accepts them.
 
@@ -17,15 +23,19 @@ Usage:
     python3 portable_sender.py                          # 10 FortiGate logs
     python3 portable_sender.py --vendor mimecast        # 10 Mimecast logs
     python3 portable_sender.py --vendor all             # Both vendors
+    python3 portable_sender.py --vendor all --count 0   # Scenario mode
     python3 portable_sender.py --count 50               # Send 50 logs
     python3 portable_sender.py --config my_lab.json     # Use custom config
     python3 portable_sender.py --list-vendors           # Show vendors + config
+    python3 portable_sender.py --export-samples         # FortiGate parser demo
 
 Setup:
     1. Download portable_sender.py
-    2. Copy config.example.json to config.json
-    3. Edit config.json with your syslog host, ports, and lab IPs
-    4. Run: python3 portable_sender.py --vendor all --count 0
+    2. Set env vars and generate config:
+       export SYSLOG_HOST=your-tenant.in.prod.onum.com
+       export FORTINET_PORT=2518
+       python3 portable_sender.py --init-config
+    3. Run: python3 portable_sender.py --vendor all --count 0
 """
 import socket
 import csv
@@ -462,6 +472,59 @@ FORTINET_SAMPLES = [
 
     # Post-compromise: Data exfiltration (large upload to external)
     '<45>date=2024-12-16 time=18:26:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373560000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=49250 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400300 proto=6 action="close" policyid=5 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=49250 app="SSL" appcat="network.service" duration=60 sentbyte=5200000 rcvdbyte=4500 sentpkt=3800 rcvdpkt=45 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # =====================================================================
+    # NORMAL TRAFFIC — Lab machines SaaS browsing / updates / internal
+    # Used in scenario mode to establish benign baseline
+    # =====================================================================
+
+    # [67] Protect: Slack HTTPS session
+    '<45>date=2024-12-16 time=17:40:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370800000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=52400 srcintf="port5" srcintfrole="lan" dstip=44.236.112.50 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40500100 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{PROTECT_EXT_IP}} transport=52400 app="Slack" appcat="collaboration" duration=120 sentbyte=18500 rcvdbyte=245000 sentpkt=85 rcvdpkt=190 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [68] Protect: Microsoft Teams session
+    '<45>date=2024-12-16 time=17:41:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370860000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=53200 srcintf="port5" srcintfrole="lan" dstip=52.112.120.20 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40500200 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{PROTECT_EXT_IP}} transport=53200 app="Microsoft.Teams" appcat="collaboration" duration=300 sentbyte=45000 rcvdbyte=680000 sentpkt=200 rcvdpkt=520 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [69] Protect: Zoom meeting
+    '<45>date=2024-12-16 time=17:42:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370920000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=54100 srcintf="port5" srcintfrole="lan" dstip=170.114.52.10 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40500300 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{PROTECT_EXT_IP}} transport=54100 app="Zoom" appcat="video/audio" duration=1800 sentbyte=125000 rcvdbyte=4500000 sentpkt=800 rcvdpkt=3500 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [70] Protect: Salesforce browsing
+    '<45>date=2024-12-16 time=17:43:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370980000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=55300 srcintf="port5" srcintfrole="lan" dstip=136.147.46.30 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40500400 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{PROTECT_EXT_IP}} transport=55300 app="Salesforce" appcat="web.client" duration=90 sentbyte=12000 rcvdbyte=185000 sentpkt=50 rcvdpkt=140 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [71] Protect: Windows Update download
+    '<45>date=2024-12-16 time=17:44:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371040000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=56200 srcintf="port5" srcintfrole="lan" dstip=13.107.4.50 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40500500 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{PROTECT_EXT_IP}} transport=56200 app="Windows.Update" appcat="network.service" duration=45 sentbyte=5200 rcvdbyte=2800000 sentpkt=25 rcvdpkt=2000 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [72] Protect: Dropbox sync
+    '<45>date=2024-12-16 time=17:45:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371100000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=57100 srcintf="port5" srcintfrole="lan" dstip=162.125.64.3 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40500600 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{PROTECT_EXT_IP}} transport=57100 app="Dropbox" appcat="cloud.app" duration=30 sentbyte=34000 rcvdbyte=95000 sentpkt=45 rcvdpkt=70 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [73] Detect: AWS Console session
+    '<45>date=2024-12-16 time=17:40:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370830000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=52800 srcintf="port5" srcintfrole="lan" dstip=54.239.28.85 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40600100 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=52800 app="AWS.Console" appcat="web.client" duration=600 sentbyte=52000 rcvdbyte=320000 sentpkt=180 rcvdpkt=250 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [74] Detect: GitHub HTTPS session
+    '<45>date=2024-12-16 time=17:41:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370890000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=53600 srcintf="port5" srcintfrole="lan" dstip=140.82.121.3 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40600200 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=53600 app="GitHub" appcat="web.client" duration=180 sentbyte=28000 rcvdbyte=410000 sentpkt=100 rcvdpkt=310 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [75] Detect: Google Search
+    '<45>date=2024-12-16 time=17:42:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370950000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=54500 srcintf="port5" srcintfrole="lan" dstip=142.250.80.46 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40600300 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=54500 app="Google.Search" appcat="web.client" duration=15 sentbyte=4800 rcvdbyte=62000 sentpkt=20 rcvdpkt=45 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [76] Detect: O365 Outlook
+    '<45>date=2024-12-16 time=17:43:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371010000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=55400 srcintf="port5" srcintfrole="lan" dstip=40.97.164.10 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40600400 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=55400 app="Microsoft.Outlook.365" appcat="web.client" duration=240 sentbyte=35000 rcvdbyte=520000 sentpkt=130 rcvdpkt=400 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [77] Ubuntu: NTP sync
+    '<45>date=2024-12-16 time=17:40:15 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370815000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UBUNTU_IP}} srcport=42300 srcintf="port5" srcintfrole="lan" dstip=91.189.89.198 dstport=123 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United Kingdom" sessionid=40700100 proto=17 action="accept" policyid=3 policytype="policy" service="NTP" trandisp="snat" transip={{UBUNTU_EXT_IP}} transport=42300 app="NTP" appcat="network.service" duration=1 sentbyte=76 rcvdbyte=76 sentpkt=1 rcvdpkt=1 osname="Linux" srcswversion="Ubuntu 22.04" mastersrcmac="aa:bb:cc:00:01:40" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
+
+    # [78] Ubuntu: OCSP certificate validation
+    '<45>date=2024-12-16 time=17:41:15 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370875000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UBUNTU_IP}} srcport=43100 srcintf="port5" srcintfrole="lan" dstip=93.184.220.29 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40700200 proto=6 action="close" policyid=3 policytype="policy" service="HTTP" trandisp="snat" transip={{UBUNTU_EXT_IP}} transport=43100 app="HTTP.BROWSER" appcat="web.client" duration=2 sentbyte=450 rcvdbyte=1200 sentpkt=4 rcvdpkt=4 osname="Linux" srcswversion="Ubuntu 22.04" mastersrcmac="aa:bb:cc:00:01:40" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [79] Ubuntu: Internal apt mirror
+    '<45>date=2024-12-16 time=17:42:15 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370935000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UBUNTU_IP}} srcport=44200 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=80 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40700300 proto=6 action="close" policyid=10 policytype="policy" service="HTTP" trandisp="noop" app="HTTP.BROWSER" appcat="web.client" duration=8 sentbyte=3200 rcvdbyte=1250000 sentpkt=15 rcvdpkt=900 osname="Linux" srcswversion="Ubuntu 22.04" mastersrcmac="aa:bb:cc:00:01:40" masterdstmac="11:22:33:44:55:05" msg="Session closed"',
+
+    # [80] Unmanaged: Internal SMB file share access
+    '<45>date=2024-12-16 time=17:44:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371070000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=49900 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40800100 proto=6 action="close" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=5 sentbyte=2400 rcvdbyte=85000 sentpkt=12 rcvdpkt=65 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="11:22:33:44:55:05" msg="Session closed"',
+
+    # [81] Unmanaged: LDAP auth to domain controller
+    '<45>date=2024-12-16 time=17:45:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371130000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=50100 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40800200 proto=6 action="close" policyid=10 policytype="policy" service="LDAP" trandisp="noop" app="LDAP" appcat="network.service" duration=1 sentbyte=850 rcvdbyte=2400 sentpkt=6 rcvdpkt=6 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="11:22:33:44:55:05" msg="Session closed"',
+
+    # [82] Protect -> Detect internal HTTPS (intranet)
+    '<45>date=2024-12-16 time=17:46:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371160000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=58100 srcintf="port5" srcintfrole="lan" dstip={{DETECT_IP}} dstport=443 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40900100 proto=6 action="close" policyid=10 policytype="policy" service="HTTPS" trandisp="noop" app="SSL" appcat="network.service" duration=10 sentbyte=3200 rcvdbyte=18000 sentpkt=15 rcvdpkt=20 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="aa:bb:cc:00:01:31" msg="Session closed"',
 ]
 
 
@@ -592,6 +655,25 @@ MIMECAST_SAMPLES = [
 
     # TRIGGER (delivery): Second phishing delivered
     '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # =====================================================================
+    # NORMAL EMAIL — Benign traffic for scenario baseline
+    # =====================================================================
+
+    # [25] Newsletter subscription
+    '{"datetime":"2024-12-16T17:35:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<newsletter-001@techdigest.example.com>","Subject":"Tech Digest Weekly - Dec 16 Edition","headerFrom":"noreply@techdigest.example.com","Sender":"noreply@techdigest.example.com","senderEnvelope":"bounce@techdigest.example.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":5,"SpamInfo":"clean, bulk sender","SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.30","Dir":"Inbound","MsgSz":82000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # [26] Calendar invite
+    '{"datetime":"2024-12-16T17:36:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<calendar-001@{{LAB_DOMAIN}}>","Subject":"Accepted: Weekly Standup - Tuesday 10am","headerFrom":"admin@{{LAB_DOMAIN}}","Sender":"admin@{{LAB_DOMAIN}}","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","attachments":"invite.ics","AttCnt":1,"AttSz":2800,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":8500}',
+
+    # [27] Okta password reset notification
+    '{"datetime":"2024-12-16T17:37:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<okta-reset-001@okta.example.com>","Subject":"Your password was successfully changed","headerFrom":"noreply@okta.example.com","Sender":"noreply@okta.example.com","senderEnvelope":"noreply@okta.example.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_128_GCM_SHA256","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"52.21.30.15","Dir":"Inbound","MsgSz":12400,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # [28] Automated report delivery
+    '{"datetime":"2024-12-16T17:38:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<report-001@{{LAB_DOMAIN}}>","Subject":"Daily SIEM Summary Report - Dec 16","headerFrom":"siem-reports@{{LAB_DOMAIN}}","Sender":"siem-reports@{{LAB_DOMAIN}}","Rcpt":"soc-team@{{LAB_DOMAIN}}","Act":"Acc","attachments":"daily_siem_summary_2024-12-16.pdf","AttCnt":1,"AttSz":345000,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":352000}',
+
+    # [29] Vendor invoice (legitimate external)
+    '{"datetime":"2024-12-16T17:39:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<invoice-001@acme-corp.com>","Subject":"Invoice #ACM-2024-1247 - December Services","headerFrom":"billing@acme-corp.com","Sender":"billing@acme-corp.com","senderEnvelope":"billing@acme-corp.com","Rcpt":"accounts@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":2,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":95000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 ]
 
 
@@ -609,6 +691,166 @@ VENDOR_REGISTRY = {
         "samples": MIMECAST_SAMPLES,
     },
 }
+
+
+###########################################################################
+#                    ATTACK TIMELINE SCENARIO                             #
+# Ordered phases for --vendor all --count 0 (no CSV)                     #
+# Tuples: (vendor, sample_index)                                         #
+###########################################################################
+
+SCENARIO_SEQUENCE = [
+    # ------------------------------------------------------------------
+    # Phase 1: Normal Baseline  (~20 logs)
+    # Lab machines doing everyday SaaS browsing, updates, benign email
+    # ------------------------------------------------------------------
+    ("fortinet", 67),   # Protect: Slack
+    ("mimecast", 25),   # Newsletter to emily.jones
+    ("fortinet", 68),   # Protect: Teams
+    ("fortinet", 77),   # Ubuntu: NTP sync
+    ("fortinet", 73),   # Detect: AWS Console
+    ("mimecast", 26),   # Calendar invite (internal)
+    ("fortinet", 69),   # Protect: Zoom
+    ("fortinet", 74),   # Detect: GitHub
+    ("mimecast", 27),   # Okta password reset
+    ("fortinet", 70),   # Protect: Salesforce
+    ("fortinet", 78),   # Ubuntu: OCSP check
+    ("fortinet", 75),   # Detect: Google Search
+    ("mimecast", 29),   # Vendor invoice
+    ("fortinet", 71),   # Protect: Windows Update
+    ("fortinet", 79),   # Ubuntu: apt mirror
+    ("fortinet", 76),   # Detect: O365 Outlook
+    ("mimecast", 28),   # Automated SIEM report
+    ("fortinet", 72),   # Protect: Dropbox
+    ("fortinet", 80),   # Unmanaged: SMB file share
+    ("fortinet", 81),   # Unmanaged: LDAP auth
+
+    # ------------------------------------------------------------------
+    # Phase 2: Spearphishing  (~6 logs)
+    # Attacker emails arrive, mixed with benign cover
+    # ------------------------------------------------------------------
+    ("mimecast", 19),   # Legit: Internal IT notification
+    ("mimecast", 21),   # TRIGGER: Phishing .xlsm process
+    ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered
+    ("mimecast", 20),   # Legit: External partner email to emily
+    ("mimecast", 23),   # TRIGGER: Phishing .html process
+    ("mimecast", 24),   # TRIGGER: Phishing .html delivered
+
+    # ------------------------------------------------------------------
+    # Phase 3: Cover Traffic  (~10 logs)
+    # More normal activity — victim hasn't opened attachment yet
+    # ------------------------------------------------------------------
+    ("fortinet", 82),   # Protect -> Detect internal traffic
+    ("fortinet", 67),   # Protect: Slack (repeat with variation)
+    ("fortinet", 58),   # Protect: Google browsing (original sample)
+    ("fortinet", 76),   # Detect: O365 (repeat)
+    ("mimecast", 0),    # Receipt: legit accepted
+    ("fortinet", 59),   # Ubuntu: apt update (original sample)
+    ("fortinet", 74),   # Detect: GitHub (repeat)
+    ("mimecast", 4),    # Process: no attachment
+    ("fortinet", 68),   # Protect: Teams (repeat)
+    ("fortinet", 75),   # Detect: Google Search (repeat)
+
+    # ------------------------------------------------------------------
+    # Phase 4: Compromise & Recon  (~8 logs)
+    # Detect machine starts suspicious HTTP GETs, mixed with normal
+    # ------------------------------------------------------------------
+    ("fortinet", 73),   # Detect: AWS Console (normal — still working)
+    ("fortinet", 62),   # TRIGGER: GET /proc/self/environ
+    ("fortinet", 76),   # Detect: O365 (normal cover)
+    ("fortinet", 63),   # TRIGGER: GET /etc/passwd
+    ("fortinet", 64),   # TRIGGER: GET /etc/security/passwd
+    ("mimecast", 2),    # Outbound email (normal cover)
+    ("fortinet", 60),   # Detect: O365 (original sample)
+    ("fortinet", 82),   # Internal traffic cover
+
+    # ------------------------------------------------------------------
+    # Phase 5: C2 & Lateral Movement  (~6 logs)
+    # C2 callback, port scan, SMB exploit attempt
+    # ------------------------------------------------------------------
+    ("fortinet", 65),   # C2 callback from Detect
+    ("fortinet", 61),   # Kali -> Unmanaged SMB exploitation
+    ("fortinet", 80),   # Unmanaged: normal SMB (cover)
+    ("fortinet", 60),   # Kali -> Detect port scan (IPS)
+    ("fortinet", 81),   # Unmanaged: LDAP (cover)
+    ("mimecast", 19),   # Internal IT email (cover)
+
+    # ------------------------------------------------------------------
+    # Phase 6: Data Exfiltration  (~3 logs)
+    # Large upload with cover traffic
+    # ------------------------------------------------------------------
+    ("fortinet", 75),   # Detect: Google (normal cover)
+    ("fortinet", 66),   # TRIGGER: 5.2MB upload exfiltration
+    ("mimecast", 5),    # Delivery: legit (cover)
+]
+
+
+def build_scenario_queue(vendor_ports, port_override):
+    """Build ordered attack-timeline queue, then append unseen samples shuffled."""
+    seen = {"fortinet": set(), "mimecast": set()}
+    queue = []
+
+    for vendor, idx in SCENARIO_SEQUENCE:
+        samples = VENDOR_REGISTRY[vendor]["samples"]
+        if idx >= len(samples):
+            continue  # safety: skip if index out of range
+        port = port_override if port_override is not None else vendor_ports.get(vendor, SYSLOG_PORT)
+        queue.append((vendor, port, samples[idx]))
+        seen[vendor].add(idx)
+
+    # Append all unseen samples from both vendors, shuffled (background noise)
+    remainder = []
+    for vendor in VENDOR_REGISTRY:
+        samples = VENDOR_REGISTRY[vendor]["samples"]
+        port = port_override if port_override is not None else vendor_ports.get(vendor, SYSLOG_PORT)
+        for idx, sample in enumerate(samples):
+            if idx not in seen.get(vendor, set()):
+                remainder.append((vendor, port, sample))
+    random.shuffle(remainder)
+    queue.extend(remainder)
+
+    return queue
+
+
+###########################################################################
+#                    PARSER DEMO SAMPLE INDICES                           #
+# Curated FortiGate indices covering all type/subtype combos             #
+###########################################################################
+
+PARSER_DEMO_INDICES = [
+    # traffic/forward
+    0,   # HTTPS web browsing
+    2,   # DNS query
+    # traffic/local
+    4,   # Management denied
+    5,   # Server reset
+    # event/system
+    9,   # Admin login success
+    10,  # Admin login failure
+    # event/router
+    12,  # OSPF neighbor up
+    # event/vpn
+    14,  # IPsec phase1 up
+    # utm/virus
+    38,  # EICAR test file
+    # utm/webfilter
+    40,  # Malicious URL blocked
+    # utm/dns
+    42,  # DNS query pass
+    # utm/app-ctrl
+    43,  # Social media blocked
+    # utm/ips
+    45,  # Critical attack dropped
+    # utm/anomaly
+    47,  # SYN flood
+    # utm/dlp
+    49,  # DLP file type blocked
+    # utm/ssh
+    50,  # SSH channel blocked
+    # utm/ssl
+    51,  # Certificate invalid
+    52,  # Untrusted certificate
+]
 
 
 ###########################################################################
@@ -827,6 +1069,65 @@ def send_one_log(host, port, message, retries=2):
     raise last_err
 
 
+class ConnectionPool:
+    """Persistent TCP connections keyed by port — DNS resolved once."""
+
+    def __init__(self, host, retries=2, timeout=10):
+        self._ip = socket.gethostbyname(host)
+        self._host = host
+        self._retries = retries
+        self._timeout = timeout
+        self._sockets = {}  # port -> socket
+
+    def _connect(self, port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(self._timeout)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.connect((self._ip, port))
+        return sock
+
+    def send(self, port, message):
+        """Send message on a persistent connection, reconnecting on failure."""
+        data = (message + "\n").encode('utf-8')
+        last_err = None
+        for attempt in range(1 + self._retries):
+            sock = self._sockets.get(port)
+            if sock is None:
+                try:
+                    sock = self._connect(port)
+                    self._sockets[port] = sock
+                except Exception as e:
+                    last_err = e
+                    if attempt < self._retries:
+                        time.sleep(0.5)
+                    continue
+            try:
+                sock.sendall(data)
+                return
+            except Exception as e:
+                last_err = e
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                self._sockets.pop(port, None)
+                if attempt < self._retries:
+                    time.sleep(0.5)
+        raise last_err
+
+    def close_all(self):
+        for port, sock in self._sockets.items():
+            try:
+                sock.shutdown(socket.SHUT_WR)
+            except Exception:
+                pass
+            try:
+                sock.close()
+            except Exception:
+                pass
+        self._sockets.clear()
+
+
 ###########################################################################
 #                              MAIN                                       #
 ###########################################################################
@@ -840,9 +1141,11 @@ def main():
             "examples:\n"
             "  %(prog)s                              # 10 FortiGate logs\n"
             "  %(prog)s --vendor mimecast --count 20 # 20 Mimecast logs\n"
-            "  %(prog)s --vendor all --count 0        # all samples, both vendors\n"
+            "  %(prog)s --vendor all --count 0        # scenario mode (attack timeline)\n"
             "  %(prog)s --config my_lab.json           # use custom config\n"
             "  %(prog)s --list-vendors                # show vendors\n"
+            "  %(prog)s --export-samples              # print FortiGate parser demo samples\n"
+            "  %(prog)s --init-config                 # generate config.json from env vars\n"
         ),
     )
     p.add_argument('--config', type=str, default='config.json',
@@ -855,13 +1158,17 @@ def main():
                    help='Number of logs to send per vendor, 0=all samples once (default: 10)')
     p.add_argument('--csv', type=str, default=None,
                    help='CSV file with raw logs (optional, overrides built-in samples)')
-    p.add_argument('--delay', type=float, default=0.5,
-                   help='Delay in seconds between each log (default: 0.5)')
+    p.add_argument('--delay', type=float, default=0.1,
+                   help='Delay in seconds between each log (default: 0.1)')
     p.add_argument('--vendor', type=str, default='fortinet',
                    choices=vendor_choices,
                    help='Vendor log format to send (default: fortinet)')
     p.add_argument('--list-vendors', action='store_true',
                    help='List supported vendors and exit')
+    p.add_argument('--export-samples', action='store_true',
+                   help='Print curated FortiGate samples for AI parser demo and exit')
+    p.add_argument('--init-config', action='store_true',
+                   help='Generate config.json from defaults + env vars, then exit')
     args = p.parse_args()
 
     # -- Load config -------------------------------------------------------
@@ -876,6 +1183,24 @@ def main():
             config_path = None  # will use defaults
 
     cfg = load_config(config_path)
+
+    # -- Init config and exit ----------------------------------------------
+    if args.init_config:
+        out_path = args.config  # default: config.json
+        if os.path.isfile(out_path):
+            print(f"ERROR: {out_path} already exists. Delete it first or use --config <other>.")
+            return 1
+        with open(out_path, 'w') as f:
+            json.dump(cfg, f, indent=2)
+        print(f"Config written to {out_path}")
+        print(f"  syslog_host: {cfg.get('syslog_host')}")
+        for v, vc in cfg.get('vendors', {}).items():
+            print(f"  {v} port: {vc.get('port')}")
+        for role, info in cfg.get('lab', {}).get('machines', {}).items():
+            print(f"  {role}: ip={info.get('ip')}  ext_ip={info.get('ext_ip', 'N/A')}")
+        print("\nEdit this file to change values, or re-run with env vars + --init-config.")
+        return 0
+
     if config_path and os.path.isfile(config_path):
         print(f"Config:  {config_path}")
     else:
@@ -885,6 +1210,25 @@ def main():
     vendor_ports = {v: cfg.get('vendors', {}).get(v, {}).get('port', SYSLOG_PORT)
                     for v in VENDOR_REGISTRY}
     placeholders = build_placeholders(cfg)
+
+    # -- Export samples and exit -------------------------------------------
+    if args.export_samples:
+        samples = FORTINET_SAMPLES
+        print(f"# FortiGate Parser Demo Samples — {len(PARSER_DEMO_INDICES)} logs")
+        print(f"# Generated by portable_sender.py --export-samples")
+        print(f"# Covers all type/subtype combinations for AI parser training")
+        print()
+        for idx in PARSER_DEMO_INDICES:
+            if idx >= len(samples):
+                continue
+            raw = samples[idx]
+            rewritten = apply_placeholders(raw, placeholders)
+            rewritten = rewrite_fortinet_timestamps(rewritten)
+            label = extract_log_label("fortinet", rewritten)
+            print(f"# [{idx}] {label}")
+            print(rewritten)
+            print()
+        return 0
 
     # -- List vendors and exit ---------------------------------------------
     if args.list_vendors:
@@ -913,68 +1257,82 @@ def main():
         vendors_to_send = [vendor]
 
     # -- Build the send queue: list of (vendor, port, raw_line) tuples -----
-    queue = []
-    for v in vendors_to_send:
-        info = VENDOR_REGISTRY[v]
-        port = args.port if args.port is not None else vendor_ports.get(v, SYSLOG_PORT)
-        builtin = info["samples"]
+    scenario_mode = (args.vendor.lower() == "all" and args.count == 0
+                     and not args.csv)
 
-        if args.csv and len(vendors_to_send) == 1:
-            limit = args.count if args.count > 0 else None
-            lines = load_csv(args.csv, limit)
-            print(f"Loaded {len(lines)} logs from {args.csv}")
-        else:
-            if args.count == 0:
-                lines = list(builtin)
+    if scenario_mode:
+        queue = build_scenario_queue(vendor_ports, args.port)
+        print("  ** Scenario mode: attack timeline ordering **")
+        print(f"  {len(queue)} logs (scenario sequence + remaining samples)")
+    else:
+        queue = []
+        for v in vendors_to_send:
+            info = VENDOR_REGISTRY[v]
+            port = args.port if args.port is not None else vendor_ports.get(v, SYSLOG_PORT)
+            builtin = info["samples"]
+
+            if args.csv and len(vendors_to_send) == 1:
+                limit = args.count if args.count > 0 else None
+                lines = load_csv(args.csv, limit)
+                print(f"Loaded {len(lines)} logs from {args.csv}")
             else:
-                lines = []
-                idx = 0
-                while len(lines) < args.count:
-                    lines.append(builtin[idx % len(builtin)])
-                    idx += 1
-            print(f"  {v}: {len(lines)} logs ({len(builtin)} unique samples) -> port {port}")
+                if args.count == 0:
+                    lines = list(builtin)
+                else:
+                    lines = []
+                    idx = 0
+                    while len(lines) < args.count:
+                        lines.append(builtin[idx % len(builtin)])
+                        idx += 1
+                print(f"  {v}: {len(lines)} logs ({len(builtin)} unique samples) -> port {port}")
 
-        for line in lines:
-            queue.append((v, port, line))
+            for line in lines:
+                queue.append((v, port, line))
+
+        # Interleave vendors when sending all (shuffle so they mix naturally)
+        if len(vendors_to_send) > 1:
+            random.shuffle(queue)
 
     if not queue:
         print("ERROR: No logs to send")
         return 1
 
-    # Interleave vendors when sending all (shuffle so they mix naturally)
-    if len(vendors_to_send) > 1:
-        random.shuffle(queue)
-
     # -- Resolve DNS once --------------------------------------------------
-    ip = socket.gethostbyname(host)
-    print(f"\nHost:    {host} ({ip})")
+    print(f"\nHost:    {host}")
     print(f"Vendors: {', '.join(vendors_to_send)}")
     print(f"Total:   {len(queue)} logs")
     print(f"Delay:   {args.delay}s")
     print()
 
-    # -- Send each log on its own connection (like nc -q) ------------------
+    # -- Send using persistent connection pool -----------------------------
+    pool = ConnectionPool(host)
+    print(f"Resolved: {host} -> {pool._ip}")
+    print()
+
     sent = 0
     failed = 0
-    for i, (v, port, raw) in enumerate(queue):
-        rewritten = apply_placeholders(raw, placeholders)
-        rewritten = REWRITE_FN[v](rewritten)
-        rewritten = RANDOMIZE_FN[v](rewritten)
-        if v == "mimecast":
-            rewritten = enrich_mimecast_ecs(rewritten)
-        label = extract_log_label(v, rewritten)
-        try:
-            send_one_log(host, port, rewritten)
-            sent += 1
-            ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-            print(f"  [{ts}] Sent {i+1}/{len(queue)} OK  "
-                  f"[{v}:{port}] [{label}]  ({len(rewritten)} bytes)")
-        except Exception as e:
-            failed += 1
-            print(f"  [{i+1}/{len(queue)}] FAILED [{v}:{port}] [{label}]: {e}")
+    try:
+        for i, (v, port, raw) in enumerate(queue):
+            rewritten = apply_placeholders(raw, placeholders)
+            rewritten = REWRITE_FN[v](rewritten)
+            rewritten = RANDOMIZE_FN[v](rewritten)
+            if v == "mimecast":
+                rewritten = enrich_mimecast_ecs(rewritten)
+            label = extract_log_label(v, rewritten)
+            try:
+                pool.send(port, rewritten)
+                sent += 1
+                ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                print(f"  [{ts}] Sent {i+1}/{len(queue)} OK  "
+                      f"[{v}:{port}] [{label}]  ({len(rewritten)} bytes)")
+            except Exception as e:
+                failed += 1
+                print(f"  [{i+1}/{len(queue)}] FAILED [{v}:{port}] [{label}]: {e}")
 
-        if args.delay > 0 and i < len(queue) - 1:
-            time.sleep(args.delay)
+            if args.delay > 0 and i < len(queue) - 1:
+                time.sleep(args.delay)
+    finally:
+        pool.close_all()
 
     print(f"\nDone: {sent} sent, {failed} failed")
     return 0 if failed == 0 else 1
