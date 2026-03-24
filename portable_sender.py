@@ -1233,6 +1233,17 @@ def main():
                     for v in VENDOR_REGISTRY}
     placeholders = build_placeholders(cfg)
 
+    # -- Quick env var reminder --------------------------------------------
+    print("\nTip: Override config values with env vars before running:")
+    print("  export SYSLOG_HOST=\"your-tenant.in.prod.onum.com\"")
+    print("  export FORTINET_PORT=2518    export MIMECAST_PORT=2519")
+    print("  export LAB_DOMAIN=\"warp-duck.lab\"")
+    print("  export ATTACKER_IP=x.x.x.x  export DETECT_IP=x.x.x.x")
+    print("  export PROTECT_IP=x.x.x.x   export UNMANAGED_IP=x.x.x.x")
+    print("  export UBUNTU_IP=x.x.x.x")
+    print("  Then run: python3 portable_sender.py --init-config")
+    print()
+
     # -- Export samples and exit -------------------------------------------
     if args.export_samples:
         samples = FORTINET_SAMPLES
