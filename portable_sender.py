@@ -558,6 +558,20 @@ FORTINET_SAMPLES = [
 
     # [87] Unmanaged: DNS query to external resolver
     '<45>date=2024-12-16 time=17:44:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371040000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=51300 srcintf="port5" srcintfrole="lan" dstip=8.8.8.8 dstport=53 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40800400 proto=17 action="accept" policyid=3 policytype="policy" service="DNS" trandisp="snat" transip={{UNMANAGED_EXT_IP}} transport=51300 app="DNS" appcat="network.service" duration=1 sentbyte=74 rcvdbyte=180 sentpkt=1 rcvdpkt=1 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
+
+    # =====================================================================
+    # POST-COMPROMISE: C2 to attacker.lab.local (internal attacker infra)
+    # Links to existing payloads in DT Outlook box
+    # =====================================================================
+
+    # [88] Detect -> attacker.lab.local: HTTP beacon (payload callback)
+    '<45>date=2024-12-16 time=18:25:15 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373515000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52200 srcintf="port5" srcintfrole="lan" dstip={{ATTACKER_IP}} dstport=80 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40400150 proto=6 action="passthrough" policyid=10 service="HTTP" httpmethod="GET" hostname="attacker.lab.local" url="/api/beacon?id=DT01&t=1734373515" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+
+    # [89] Detect -> attacker.lab.local: C2 reverse shell session
+    '<45>date=2024-12-16 time=18:25:40 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373540000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=49300 srcintf="port5" srcintfrole="lan" dstip={{ATTACKER_IP}} dstport=4444 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40400250 proto=6 action="accept" policyid=10 policytype="policy" service="tcp/4444" trandisp="noop" app="TCP-Generic" appcat="network.service" duration=300 sentbyte=28000 rcvdbyte=145000 sentpkt=120 rcvdpkt=280 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:21" msg="Session accepted"',
+
+    # [90] Detect -> attacker.lab.local: staged payload download
+    '<45>date=2024-12-16 time=18:25:50 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373550000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52300 srcintf="port5" srcintfrole="lan" dstip={{ATTACKER_IP}} dstport=8080 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40400260 proto=6 action="passthrough" policyid=10 service="HTTP" httpmethod="GET" hostname="attacker.lab.local" url="/payloads/stage2.exe" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
 ]
 
 
@@ -709,6 +723,18 @@ MIMECAST_SAMPLES = [
 
     # [29] Vendor invoice (legitimate external)
     '{"datetime":"2024-12-16T17:39:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<invoice-001@acme-corp.com>","Subject":"Invoice #ACM-2024-1247 - December Services","headerFrom":"billing@acme-corp.com","Sender":"billing@acme-corp.com","senderEnvelope":"billing@acme-corp.com","Rcpt":"accounts@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":2,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":95000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # =====================================================================
+    # DETECTION TRIGGER: tstark@workshop.cs-labs.net phishing
+    # Links to existing malicious emails in DT Outlook box
+    # Same sender lets NGSIEM correlate generated + real detections
+    # =====================================================================
+
+    # [30] TRIGGER (process): tstark phishing with malicious link — accepted to DT
+    '{"datetime":"2024-12-16T18:14:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00893","MsgId":"<atk003@workshop.cs-labs.net>","Subject":"Stark Industries - Confidential Project Files","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"Project_Files_Q4.zip","AttCnt":1,"AttSz":342000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":8,"SpfResult":"neutral","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","MsgSz":355000}',
+
+    # [31] TRIGGER (delivery): tstark phishing delivered to DT
+    '{"datetime":"2024-12-16T18:14:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00893","MsgId":"<atk003@workshop.cs-labs.net>","Subject":"Stark Industries - Confidential Project Files","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":680,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 ]
 
 
@@ -775,6 +801,8 @@ SCENARIO_SEQUENCE = [
     ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered to {{DETECT_EMAIL}}
     ("mimecast", 23),   # TRIGGER: Phishing .html process (same domain, diff subject)
     ("mimecast", 24),   # TRIGGER: Phishing .html delivered to {{PROTECT_EMAIL}}
+    ("mimecast", 30),   # TRIGGER: tstark@workshop.cs-labs.net -> {{DETECT_EMAIL}} (links to real inbox)
+    ("mimecast", 31),   # TRIGGER: tstark phishing delivered to {{DETECT_EMAIL}}
 
     # ------------------------------------------------------------------
     # Phase 3: Cover Traffic  (~10 logs)
@@ -809,6 +837,9 @@ SCENARIO_SEQUENCE = [
     # C2 callback, then adversary probes Protect (BL) from Detect
     # ------------------------------------------------------------------
     ("fortinet", 65),   # C2 callback from Detect -> 185.220.101.45
+    ("fortinet", 88),   # C2: Detect -> attacker.lab.local beacon (links to real payloads)
+    ("fortinet", 89),   # C2: Detect -> attacker.lab.local reverse shell
+    ("fortinet", 90),   # C2: Detect -> attacker.lab.local stage2 download
     ("fortinet", 83),   # RECON: Detect -> Protect SMB probe
     ("fortinet", 84),   # RECON: Detect -> Protect RDP attempt
     ("fortinet", 85),   # RECON: Detect -> Protect admin share C$
