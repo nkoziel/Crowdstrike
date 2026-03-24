@@ -245,11 +245,11 @@ FORTINET_SAMPLES = [
     # EVENT LOGS - subtype=user
     # =====================================================================
 
-    # user: RADIUS auth success
-    '<45>date=2024-12-16 time=17:58:30 devname="FortiGate-100F" devid="FG100FTEST00002" eventtime=1734371910000000000 tz="+0000" logid="0102043008" type="event" subtype="user" level="notice" vd="root" logdesc="Authentication success" srcip=192.168.1.150 user="jsmith" server="RADIUS-01" group="VPN-Users" authproto="RADIUS" action="authentication" status="success" msg="User jsmith authenticated successfully via RADIUS"',
+    # user: RADIUS auth success (Detect user VPN login)
+    '<45>date=2024-12-16 time=17:58:30 devname="FortiGate-100F" devid="FG100FTEST00002" eventtime=1734371910000000000 tz="+0000" logid="0102043008" type="event" subtype="user" level="notice" vd="root" logdesc="Authentication success" srcip={{DETECT_IP}} user="{{DETECT_USER}}" server="RADIUS-01" group="VPN-Users" authproto="RADIUS" action="authentication" status="success" msg="User {{DETECT_USER}} authenticated successfully via RADIUS"',
 
-    # user: LDAP auth failure
-    '<45>date=2024-12-16 time=17:59:00 devname="FortiGate-100F" devid="FG100FTEST00002" eventtime=1734371940000000000 tz="+0000" logid="0102043009" type="event" subtype="user" level="warning" vd="root" logdesc="Authentication failure" srcip=192.168.1.175 user="bwilliams" server="LDAP-DC01" group="N/A" authproto="LDAP" action="authentication" status="failure" reason="credential_or_server_error" msg="User bwilliams failed LDAP authentication"',
+    # user: LDAP auth failure (Protect user failed login)
+    '<45>date=2024-12-16 time=17:59:00 devname="FortiGate-100F" devid="FG100FTEST00002" eventtime=1734371940000000000 tz="+0000" logid="0102043009" type="event" subtype="user" level="warning" vd="root" logdesc="Authentication failure" srcip={{PROTECT_IP}} user="{{PROTECT_USER}}" server="LDAP-DC01" group="N/A" authproto="LDAP" action="authentication" status="failure" reason="credential_or_server_error" msg="User {{PROTECT_USER}} failed LDAP authentication"',
 
     # =====================================================================
     # EVENT LOGS - subtype=ha
@@ -295,11 +295,11 @@ FORTINET_SAMPLES = [
     # EVENT LOGS - subtype=endpoint
     # =====================================================================
 
-    # endpoint: FortiClient connection add
-    '<45>date=2024-12-16 time=18:03:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734372210000000000 tz="+0000" logid="0111044900" type="event" subtype="endpoint" level="notice" vd="root" logdesc="FortiClient endpoint connected" msg="FortiClient endpoint DESKTOP-ABC123 connected, user jdoe, IP 192.168.5.22, FCT version 7.2.3" action="connection-add" srcip=192.168.5.22 user="jdoe" hostname="DESKTOP-ABC123" fctver="7.2.3" os="Windows 11" compliance="compliant"',
+    # endpoint: FortiClient connection add (Detect machine)
+    '<45>date=2024-12-16 time=18:03:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734372210000000000 tz="+0000" logid="0111044900" type="event" subtype="endpoint" level="notice" vd="root" logdesc="FortiClient endpoint connected" msg="FortiClient endpoint WIN10-DETECT connected, user {{DETECT_USER}}, IP {{DETECT_IP}}, FCT version 7.2.3" action="connection-add" srcip={{DETECT_IP}} user="{{DETECT_USER}}" hostname="WIN10-DETECT" fctver="7.2.3" os="Windows 11" compliance="compliant"',
 
-    # endpoint: FortiClient connection close
-    '<45>date=2024-12-16 time=18:04:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734372240000000000 tz="+0000" logid="0111044901" type="event" subtype="endpoint" level="notice" vd="root" logdesc="FortiClient endpoint disconnected" msg="FortiClient endpoint LAPTOP-XYZ789 disconnected, user mking, IP 192.168.5.45, reason timeout" action="connection-close" srcip=192.168.5.45 user="mking" hostname="LAPTOP-XYZ789" reason="timeout"',
+    # endpoint: FortiClient connection close (Protect machine)
+    '<45>date=2024-12-16 time=18:04:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734372240000000000 tz="+0000" logid="0111044901" type="event" subtype="endpoint" level="notice" vd="root" logdesc="FortiClient endpoint disconnected" msg="FortiClient endpoint WIN10-PROTECT disconnected, user {{PROTECT_USER}}, IP {{PROTECT_IP}}, reason timeout" action="connection-close" srcip={{PROTECT_IP}} user="{{PROTECT_USER}}" hostname="WIN10-PROTECT" reason="timeout"',
 
     # =====================================================================
     # EVENT LOGS - subtype=security-rating
@@ -472,19 +472,19 @@ FORTINET_SAMPLES = [
     # =====================================================================
 
     # TRIGGER: GET /proc/self/environ on C2 server
-    '<45>date=2024-12-16 time=18:25:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373500000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" srcip={{DETECT_IP}} srcport=52100 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400100 proto=6 action="passthrough" policyid=5 service="HTTP" httpmethod="GET" hostname="c2-callback.example.com" url="/proc/self/environ" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+    '<45>date=2024-12-16 time=18:25:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373500000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52100 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400100 proto=6 action="passthrough" policyid=5 service="HTTP" httpmethod="GET" hostname="c2-callback.example.com" url="/proc/self/environ" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
 
     # TRIGGER: GET /etc/passwd
-    '<45>date=2024-12-16 time=18:25:05 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373505000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" srcip={{DETECT_IP}} srcport=52102 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400102 proto=6 action="passthrough" policyid=5 service="HTTP" httpmethod="GET" hostname="c2-callback.example.com" url="/etc/passwd" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+    '<45>date=2024-12-16 time=18:25:05 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373505000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52102 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400102 proto=6 action="passthrough" policyid=5 service="HTTP" httpmethod="GET" hostname="c2-callback.example.com" url="/etc/passwd" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
 
     # TRIGGER: GET /etc/security/passwd
-    '<45>date=2024-12-16 time=18:25:10 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373510000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" srcip={{DETECT_IP}} srcport=52104 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400104 proto=6 action="passthrough" policyid=5 service="HTTP" httpmethod="GET" hostname="c2-callback.example.com" url="/etc/security/passwd" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+    '<45>date=2024-12-16 time=18:25:10 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373510000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52104 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=80 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400104 proto=6 action="passthrough" policyid=5 service="HTTP" httpmethod="GET" hostname="c2-callback.example.com" url="/etc/security/passwd" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
 
     # Post-compromise: C2 callback from Detect to external attacker
-    '<45>date=2024-12-16 time=18:25:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373530000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=49200 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=4443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400200 proto=6 action="accept" policyid=5 policytype="policy" service="tcp/4443" trandisp="snat" transip={{DETECT_EXT_IP}} transport=49200 app="SSL" appcat="network.service" duration=120 sentbyte=15000 rcvdbyte=85000 sentpkt=45 rcvdpkt=120 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
+    '<45>date=2024-12-16 time=18:25:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373530000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=49200 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=4443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400200 proto=6 action="accept" policyid=5 policytype="policy" service="tcp/4443" trandisp="snat" transip={{DETECT_EXT_IP}} transport=49200 app="SSL" appcat="network.service" duration=120 sentbyte=15000 rcvdbyte=85000 sentpkt=45 rcvdpkt=120 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
 
     # Post-compromise: Data exfiltration (large upload to external)
-    '<45>date=2024-12-16 time=18:26:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373560000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{DETECT_IP}} srcport=49250 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400300 proto=6 action="close" policyid=5 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=49250 app="SSL" appcat="network.service" duration=60 sentbyte=5200000 rcvdbyte=4500 sentpkt=3800 rcvdpkt=45 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+    '<45>date=2024-12-16 time=18:26:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373560000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=49250 srcintf="port5" srcintfrole="lan" dstip=185.220.101.45 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="Russia" sessionid=40400300 proto=6 action="close" policyid=5 policytype="policy" service="HTTPS" trandisp="snat" transip={{DETECT_EXT_IP}} transport=49250 app="SSL" appcat="network.service" duration=60 sentbyte=5200000 rcvdbyte=4500 sentpkt=3800 rcvdpkt=45 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
 
     # =====================================================================
     # NORMAL TRAFFIC — Lab machines SaaS browsing / updates / internal
@@ -545,13 +545,19 @@ FORTINET_SAMPLES = [
     # =====================================================================
 
     # [83] Detect -> Protect: SMB probe (adversary checking file shares)
-    '<45>date=2024-12-16 time=18:27:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373620000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{DETECT_IP}} srcport=49800 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000100 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=3 sentbyte=1800 rcvdbyte=4200 sentpkt=12 rcvdpkt=10 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+    '<45>date=2024-12-16 time=18:27:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373620000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=49800 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000100 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=3 sentbyte=1800 rcvdbyte=4200 sentpkt=12 rcvdpkt=10 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
 
     # [84] Detect -> Protect: RDP attempt (adversary trying remote desktop)
-    '<45>date=2024-12-16 time=18:27:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373650000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{DETECT_IP}} srcport=50200 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000200 proto=6 action="accept" policyid=10 policytype="policy" service="RDP" trandisp="noop" app="RDP" appcat="network.service" duration=8 sentbyte=5400 rcvdbyte=12000 sentpkt=25 rcvdpkt=30 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+    '<45>date=2024-12-16 time=18:27:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373650000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=50200 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000200 proto=6 action="accept" policyid=10 policytype="policy" service="RDP" trandisp="noop" app="RDP" appcat="network.service" duration=8 sentbyte=5400 rcvdbyte=12000 sentpkt=25 rcvdpkt=30 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
 
     # [85] Detect -> Protect: Admin share C$ access attempt (lateral movement)
-    '<45>date=2024-12-16 time=18:28:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373680000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{DETECT_IP}} srcport=50500 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000300 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=2 sentbyte=3200 rcvdbyte=1500 sentpkt=18 rcvdpkt=8 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+    '<45>date=2024-12-16 time=18:28:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373680000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=50500 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000300 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=2 sentbyte=3200 rcvdbyte=1500 sentpkt=18 rcvdpkt=8 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+
+    # [86] Unmanaged: HTTPS web browsing (contractor checking webmail)
+    '<45>date=2024-12-16 time=17:43:15 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370995000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=52700 srcintf="port5" srcintfrole="lan" dstip=142.250.80.46 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40800300 proto=6 action="close" policyid=3 policytype="policy" service="HTTPS" trandisp="snat" transip={{UNMANAGED_EXT_IP}} transport=52700 app="Google.Gmail" appcat="web.client" duration=60 sentbyte=15000 rcvdbyte=230000 sentpkt=65 rcvdpkt=175 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="11:22:33:44:55:01" msg="Session closed"',
+
+    # [87] Unmanaged: DNS query to external resolver
+    '<45>date=2024-12-16 time=17:44:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371040000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=51300 srcintf="port5" srcintfrole="lan" dstip=8.8.8.8 dstport=53 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40800400 proto=17 action="accept" policyid=3 policytype="policy" service="DNS" trandisp="snat" transip={{UNMANAGED_EXT_IP}} transport=51300 app="DNS" appcat="network.service" duration=1 sentbyte=74 rcvdbyte=180 sentpkt=1 rcvdpkt=1 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="11:22:33:44:55:01" msg="Session accepted"',
 ]
 
 
@@ -605,11 +611,11 @@ MIMECAST_SAMPLES = [
     # =====================================================================
 
     # AV: Macro malware BLOCKED — same attacker as successful phish [21]
-    # Attacker first attempt: securecorp-benefits.com -> emily.jones — caught by AV
+    # Attacker first attempt: securecorp-benefits.com -> {{DETECT_EMAIL}} — caught by AV
     '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-001@securecorp-benefits.com>","Subject":"Q4 Benefits Enrollment - Review Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Hld","FileName":"Q4_Benefits_Enrollment.xlsm","FileExt":"xlsm","FileSz":192000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"198.51.100.77","SpamScore":18,"SpfResult":"pass","DkimResult":"pass","msg":"Macro malware detected in Excel attachment — held for review"}',
 
     # AV: Phishing HTML BLOCKED — same attacker as successful phish [23]
-    # Attacker first attempt: it-helpdesk-portal.com -> admin — caught by AV
+    # Attacker first attempt: it-helpdesk-portal.com -> {{PROTECT_EMAIL}} — caught by AV
     '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-002@it-helpdesk-portal.com>","Subject":"IT Security Alert - Verify Your Account","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Rej","FileName":"account_verification.html","FileExt":"html","FileSz":5200,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"104.20.145.30","SpamScore":30,"SpfResult":"neutral","DkimResult":"pass","msg":"Phishing content detected in HTML attachment — rejected"}',
 
     # =====================================================================
@@ -673,7 +679,7 @@ MIMECAST_SAMPLES = [
     # Correlated with FortiGate suspicious HTTP GETs from {{DETECT_IP}}
     # =====================================================================
 
-    # TRIGGER (process): Phishing with .xlsm accepted — attacker -> emily.jones
+    # TRIGGER (process): Phishing with .xlsm accepted — attacker -> {{DETECT_EMAIL}}
     '{"datetime":"2024-12-16T18:15:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
 
     # TRIGGER (delivery): Same phishing email delivered successfully
@@ -734,7 +740,7 @@ SCENARIO_SEQUENCE = [
     # Lab machines doing everyday SaaS browsing, updates, benign email
     # ------------------------------------------------------------------
     ("fortinet", 67),   # Protect: Slack
-    ("mimecast", 25),   # Newsletter to emily.jones
+    ("mimecast", 25),   # Newsletter to {{DETECT_EMAIL}}
     ("fortinet", 68),   # Protect: Teams
     ("fortinet", 77),   # Ubuntu: NTP sync
     ("fortinet", 73),   # Detect: AWS Console
@@ -753,6 +759,8 @@ SCENARIO_SEQUENCE = [
     ("fortinet", 72),   # Protect: Dropbox
     ("fortinet", 80),   # Unmanaged: SMB file share
     ("fortinet", 81),   # Unmanaged: LDAP auth
+    ("fortinet", 86),   # Unmanaged: Gmail web browsing
+    ("fortinet", 87),   # Unmanaged: DNS query
 
     # ------------------------------------------------------------------
     # Phase 2: Spearphishing  (~10 logs)
@@ -760,13 +768,13 @@ SCENARIO_SEQUENCE = [
     # Same attacker domains link the detections in NGSIEM
     # ------------------------------------------------------------------
     ("mimecast", 19),   # Legit: Internal IT notification
-    ("mimecast", 9),    # BLOCKED: .xlsm from securecorp-benefits.com -> emily.jones
-    ("mimecast", 10),   # BLOCKED: .html from it-helpdesk-portal.com -> admin
-    ("mimecast", 20),   # Legit: External partner email to emily
+    ("mimecast", 9),    # BLOCKED: .xlsm from securecorp-benefits.com -> {{DETECT_EMAIL}}
+    ("mimecast", 10),   # BLOCKED: .html from it-helpdesk-portal.com -> {{PROTECT_EMAIL}}
+    ("mimecast", 20),   # Legit: External partner email to {{DETECT_EMAIL}}
     ("mimecast", 21),   # TRIGGER: Phishing .xlsm process (same domain, diff subject — evades)
-    ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered to emily.jones
+    ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered to {{DETECT_EMAIL}}
     ("mimecast", 23),   # TRIGGER: Phishing .html process (same domain, diff subject)
-    ("mimecast", 24),   # TRIGGER: Phishing .html delivered to admin
+    ("mimecast", 24),   # TRIGGER: Phishing .html delivered to {{PROTECT_EMAIL}}
 
     # ------------------------------------------------------------------
     # Phase 3: Cover Traffic  (~10 logs)
