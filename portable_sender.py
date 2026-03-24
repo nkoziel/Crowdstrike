@@ -525,6 +525,20 @@ FORTINET_SAMPLES = [
 
     # [82] Protect -> Detect internal HTTPS (intranet)
     '<45>date=2024-12-16 time=17:46:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371160000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{PROTECT_IP}} srcport=58100 srcintf="port5" srcintfrole="lan" dstip={{DETECT_IP}} dstport=443 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40900100 proto=6 action="close" policyid=10 policytype="policy" service="HTTPS" trandisp="noop" app="SSL" appcat="network.service" duration=10 sentbyte=3200 rcvdbyte=18000 sentpkt=15 rcvdpkt=20 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:30" masterdstmac="aa:bb:cc:00:01:31" msg="Session closed"',
+
+    # =====================================================================
+    # POST-COMPROMISE RECON — Detect (compromised) probing Protect (BL)
+    # Adversary pivoting from victim to another CrowdStrike-managed host
+    # =====================================================================
+
+    # [83] Detect -> Protect: SMB probe (adversary checking file shares)
+    '<45>date=2024-12-16 time=18:27:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373620000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{DETECT_IP}} srcport=49800 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000100 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=3 sentbyte=1800 rcvdbyte=4200 sentpkt=12 rcvdpkt=10 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+
+    # [84] Detect -> Protect: RDP attempt (adversary trying remote desktop)
+    '<45>date=2024-12-16 time=18:27:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373650000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{DETECT_IP}} srcport=50200 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000200 proto=6 action="accept" policyid=10 policytype="policy" service="RDP" trandisp="noop" app="RDP" appcat="network.service" duration=8 sentbyte=5400 rcvdbyte=12000 sentpkt=25 rcvdpkt=30 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+
+    # [85] Detect -> Protect: Admin share C$ access attempt (lateral movement)
+    '<45>date=2024-12-16 time=18:28:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373680000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{DETECT_IP}} srcport=50500 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41000300 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=2 sentbyte=3200 rcvdbyte=1500 sentpkt=18 rcvdpkt=8 osname="Windows" srcswversion="Windows 11" mastersrcmac="aa:bb:cc:00:01:31" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
 ]
 
 
@@ -577,11 +591,13 @@ MIMECAST_SAMPLES = [
     # AV logs - virus detected
     # =====================================================================
 
-    # AV: Macro malware detected
-    '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av001@infected.example.net>","Subject":"Urgent - Review Document","headerFrom":"hr@infected.example.net","Sender":"hr@infected.example.net","Rcpt":"employee@recipient.example.com","Act":"Hld","FileName":"employee_review_2024.xlsm","FileExt":"xlsm","FileSz":89000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","msg":"Macro malware detected in Excel attachment"}',
+    # AV: Macro malware BLOCKED — same attacker as successful phish [21]
+    # Attacker first attempt: securecorp-benefits.com -> emily.jones — caught by AV
+    '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-001@securecorp-benefits.com>","Subject":"Q4 Benefits Enrollment - Review Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Hld","FileName":"Q4_Benefits_Enrollment.xlsm","FileExt":"xlsm","FileSz":192000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"198.51.100.77","SpamScore":18,"SpfResult":"pass","DkimResult":"pass","msg":"Macro malware detected in Excel attachment — held for review"}',
 
-    # AV: Phishing attachment
-    '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1002","acc":"C0A1","type":"av","MsgId":"<av002@phishing.example.net>","Subject":"Your Package Delivery Notification","headerFrom":"support@delivery.example.net","Sender":"noreply@delivery.example.net","Rcpt":"victim@recipient.example.com","Act":"Rej","FileName":"tracking_details.html","FileExt":"html","FileSz":4500,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","msg":"Phishing content detected in HTML attachment"}',
+    # AV: Phishing HTML BLOCKED — same attacker as successful phish [23]
+    # Attacker first attempt: it-helpdesk-portal.com -> admin — caught by AV
+    '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-002@it-helpdesk-portal.com>","Subject":"IT Security Alert - Verify Your Account","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Rej","FileName":"account_verification.html","FileExt":"html","FileSz":5200,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"104.20.145.30","SpamScore":30,"SpfResult":"neutral","DkimResult":"pass","msg":"Phishing content detected in HTML attachment — rejected"}',
 
     # =====================================================================
     # Spam Event Thread logs
@@ -726,15 +742,18 @@ SCENARIO_SEQUENCE = [
     ("fortinet", 81),   # Unmanaged: LDAP auth
 
     # ------------------------------------------------------------------
-    # Phase 2: Spearphishing  (~6 logs)
-    # Attacker emails arrive, mixed with benign cover
+    # Phase 2: Spearphishing  (~10 logs)
+    # First wave BLOCKED by Mimecast, second wave gets through
+    # Same attacker domains link the detections in NGSIEM
     # ------------------------------------------------------------------
     ("mimecast", 19),   # Legit: Internal IT notification
-    ("mimecast", 21),   # TRIGGER: Phishing .xlsm process
-    ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered
+    ("mimecast", 9),    # BLOCKED: .xlsm from securecorp-benefits.com -> emily.jones
+    ("mimecast", 10),   # BLOCKED: .html from it-helpdesk-portal.com -> admin
     ("mimecast", 20),   # Legit: External partner email to emily
-    ("mimecast", 23),   # TRIGGER: Phishing .html process
-    ("mimecast", 24),   # TRIGGER: Phishing .html delivered
+    ("mimecast", 21),   # TRIGGER: Phishing .xlsm process (same domain, diff subject — evades)
+    ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered to emily.jones
+    ("mimecast", 23),   # TRIGGER: Phishing .html process (same domain, diff subject)
+    ("mimecast", 24),   # TRIGGER: Phishing .html delivered to admin
 
     # ------------------------------------------------------------------
     # Phase 3: Cover Traffic  (~10 logs)
@@ -765,10 +784,13 @@ SCENARIO_SEQUENCE = [
     ("fortinet", 82),   # Internal traffic cover
 
     # ------------------------------------------------------------------
-    # Phase 5: C2 & Lateral Movement  (~6 logs)
-    # C2 callback, port scan, SMB exploit attempt
+    # Phase 5: C2 & Lateral Movement  (~9 logs)
+    # C2 callback, then adversary probes Protect (BL) from Detect
     # ------------------------------------------------------------------
-    ("fortinet", 65),   # C2 callback from Detect
+    ("fortinet", 65),   # C2 callback from Detect -> 185.220.101.45
+    ("fortinet", 83),   # RECON: Detect -> Protect SMB probe
+    ("fortinet", 84),   # RECON: Detect -> Protect RDP attempt
+    ("fortinet", 85),   # RECON: Detect -> Protect admin share C$
     ("fortinet", 61),   # Kali -> Unmanaged SMB exploitation
     ("fortinet", 80),   # Unmanaged: normal SMB (cover)
     ("fortinet", 60),   # Kali -> Detect port scan (IPS)
