@@ -70,8 +70,10 @@ DEFAULT_CONFIG = {
             "attacker":  {"ip": "10.0.0.21",  "ext_ip": "203.0.113.21"},
             "ubuntu":    {"ip": "10.0.0.40",  "ext_ip": "203.0.113.40"},
             "unmanaged": {"ip": "10.0.0.27",  "ext_ip": "203.0.113.27"},
-            "protect":   {"ip": "10.0.0.30",  "ext_ip": "203.0.113.30"},
-            "detect":    {"ip": "10.0.0.31",  "ext_ip": "203.0.113.31"},
+            "protect":   {"ip": "10.0.0.30",  "ext_ip": "203.0.113.30",
+                          "user": "protect-user", "email": "protect-user@lab.local"},
+            "detect":    {"ip": "10.0.0.31",  "ext_ip": "203.0.113.31",
+                          "user": "detect-user", "email": "detect-user@lab.local"},
         },
     },
 }
@@ -107,13 +109,20 @@ def load_config(path):
     if os.environ.get('LAB_DOMAIN'):
         cfg['lab']['domain'] = os.environ['LAB_DOMAIN']
     # Machine IPs: DETECT_IP, DETECT_EXT_IP, ATTACKER_IP, etc.
+    # Machine identity: DETECT_USER, DETECT_EMAIL, PROTECT_USER, PROTECT_EMAIL
     for role in list(cfg['lab']['machines'].keys()):
         env_ip = os.environ.get(f'{role.upper()}_IP')
         env_ext = os.environ.get(f'{role.upper()}_EXT_IP')
+        env_user = os.environ.get(f'{role.upper()}_USER')
+        env_email = os.environ.get(f'{role.upper()}_EMAIL')
         if env_ip:
             cfg['lab']['machines'][role]['ip'] = env_ip
         if env_ext:
             cfg['lab']['machines'][role]['ext_ip'] = env_ext
+        if env_user:
+            cfg['lab']['machines'][role]['user'] = env_user
+        if env_email:
+            cfg['lab']['machines'][role]['email'] = env_email
 
     return cfg
 
@@ -128,6 +137,10 @@ def build_placeholders(cfg):
         ph[f'{{{{{key}_IP}}}}'] = info.get('ip', '10.0.0.1')
         if 'ext_ip' in info:
             ph[f'{{{{{key}_EXT_IP}}}}'] = info['ext_ip']
+        if 'user' in info:
+            ph[f'{{{{{key}_USER}}}}'] = info['user']
+        if 'email' in info:
+            ph[f'{{{{{key}_EMAIL}}}}'] = info['email']
     ph['{{LAB_DOMAIN}}'] = lab.get('domain', 'lab.local')
     return ph
 
@@ -455,7 +468,7 @@ FORTINET_SAMPLES = [
     # =====================================================================
     # DETECTION TRIGGER: Generic - Web - Suspicious HTTP GET Requests
     # Post-compromise recon from Detect machine ({{DETECT_IP}})
-    # Correlated with Mimecast phishing email to emily.jones@{{LAB_DOMAIN}}
+    # Correlated with Mimecast phishing email to {{DETECT_EMAIL}}
     # =====================================================================
 
     # TRIGGER: GET /proc/self/environ on C2 server
@@ -593,11 +606,11 @@ MIMECAST_SAMPLES = [
 
     # AV: Macro malware BLOCKED — same attacker as successful phish [21]
     # Attacker first attempt: securecorp-benefits.com -> emily.jones — caught by AV
-    '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-001@securecorp-benefits.com>","Subject":"Q4 Benefits Enrollment - Review Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Hld","FileName":"Q4_Benefits_Enrollment.xlsm","FileExt":"xlsm","FileSz":192000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"198.51.100.77","SpamScore":18,"SpfResult":"pass","DkimResult":"pass","msg":"Macro malware detected in Excel attachment — held for review"}',
+    '{"datetime":"2024-12-16T17:59:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-001@securecorp-benefits.com>","Subject":"Q4 Benefits Enrollment - Review Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Hld","FileName":"Q4_Benefits_Enrollment.xlsm","FileExt":"xlsm","FileSz":192000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"198.51.100.77","SpamScore":18,"SpfResult":"pass","DkimResult":"pass","msg":"Macro malware detected in Excel attachment — held for review"}',
 
     # AV: Phishing HTML BLOCKED — same attacker as successful phish [23]
     # Attacker first attempt: it-helpdesk-portal.com -> admin — caught by AV
-    '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-002@it-helpdesk-portal.com>","Subject":"IT Security Alert - Verify Your Account","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Rej","FileName":"account_verification.html","FileExt":"html","FileSz":5200,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"104.20.145.30","SpamScore":30,"SpfResult":"neutral","DkimResult":"pass","msg":"Phishing content detected in HTML attachment — rejected"}',
+    '{"datetime":"2024-12-16T18:00:00+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<av-blocked-002@it-helpdesk-portal.com>","Subject":"IT Security Alert - Verify Your Account","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Rej","FileName":"account_verification.html","FileExt":"html","FileSz":5200,"Virus":"HTML/Phishing.Agent.B","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"104.20.145.30","SpamScore":30,"SpfResult":"neutral","DkimResult":"pass","msg":"Phishing content detected in HTML attachment — rejected"}',
 
     # =====================================================================
     # Spam Event Thread logs
@@ -649,10 +662,10 @@ MIMECAST_SAMPLES = [
     '{"datetime":"2024-12-16T18:10:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<it-notice-001@{{LAB_DOMAIN}}>","Subject":"Scheduled Maintenance Window - Saturday 2am","headerFrom":"it-ops@{{LAB_DOMAIN}}","Sender":"it-ops@{{LAB_DOMAIN}}","Rcpt":"all-staff@{{LAB_DOMAIN}}","Act":"Acc","attachments":"N/A","AttCnt":0,"AttSz":0,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":3200}',
 
     # Legitimate: External partner email
-    '{"datetime":"2024-12-16T18:11:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<partner-001@acme-corp.com>","Subject":"Re: Joint Project Timeline","headerFrom":"pm@acme-corp.com","Sender":"pm@acme-corp.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":15600,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T18:11:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<partner-001@acme-corp.com>","Subject":"Re: Joint Project Timeline","headerFrom":"pm@acme-corp.com","Sender":"pm@acme-corp.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":15600,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # Legitimate: Outbound from lab user
-    '{"datetime":"2024-12-16T18:12:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<outbound-001@{{LAB_DOMAIN}}>","Subject":"Updated Network Diagram","headerFrom":"admin@{{LAB_DOMAIN}}","Sender":"admin@{{LAB_DOMAIN}}","Rcpt":"vendor-support@external.example.com","Act":"Acc","attachments":"network_diagram_v2.pdf","AttCnt":1,"AttSz":2400000,"Route":"outbound","Dir":"Outbound","Hld":"N","HldRsn":"N/A","MsgSz":2450000}',
+    '{"datetime":"2024-12-16T18:12:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<outbound-001@{{LAB_DOMAIN}}>","Subject":"Updated Network Diagram","headerFrom":"{{PROTECT_EMAIL}}","Sender":"{{PROTECT_EMAIL}}","Rcpt":"vendor-support@external.example.com","Act":"Acc","attachments":"network_diagram_v2.pdf","AttCnt":1,"AttSz":2400000,"Route":"outbound","Dir":"Outbound","Hld":"N","HldRsn":"N/A","MsgSz":2450000}',
 
     # =====================================================================
     # DETECTION TRIGGER: Mimecast Suspicious Attachment Type Detected
@@ -661,29 +674,29 @@ MIMECAST_SAMPLES = [
     # =====================================================================
 
     # TRIGGER (process): Phishing with .xlsm accepted — attacker -> emily.jones
-    '{"datetime":"2024-12-16T18:15:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","attachments":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
+    '{"datetime":"2024-12-16T18:15:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
 
     # TRIGGER (delivery): Same phishing email delivered successfully
-    '{"datetime":"2024-12-16T18:15:02+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":850,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T18:15:02+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":850,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # TRIGGER (process): Second phishing with .html credential harvester
-    '{"datetime":"2024-12-16T18:16:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","attachments":"password_reset_form.html","AttCnt":1,"AttSz":8200,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":25,"SpfResult":"neutral","DkimResult":"pass","IP":"104.20.145.30","MsgSz":12800}',
+    '{"datetime":"2024-12-16T18:16:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","attachments":"password_reset_form.html","AttCnt":1,"AttSz":8200,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":25,"SpfResult":"neutral","DkimResult":"pass","IP":"104.20.145.30","MsgSz":12800}',
 
     # TRIGGER (delivery): Second phishing delivered
-    '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # =====================================================================
     # NORMAL EMAIL — Benign traffic for scenario baseline
     # =====================================================================
 
     # [25] Newsletter subscription
-    '{"datetime":"2024-12-16T17:35:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<newsletter-001@techdigest.example.com>","Subject":"Tech Digest Weekly - Dec 16 Edition","headerFrom":"noreply@techdigest.example.com","Sender":"noreply@techdigest.example.com","senderEnvelope":"bounce@techdigest.example.com","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":5,"SpamInfo":"clean, bulk sender","SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.30","Dir":"Inbound","MsgSz":82000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T17:35:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<newsletter-001@techdigest.example.com>","Subject":"Tech Digest Weekly - Dec 16 Edition","headerFrom":"noreply@techdigest.example.com","Sender":"noreply@techdigest.example.com","senderEnvelope":"bounce@techdigest.example.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":5,"SpamInfo":"clean, bulk sender","SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.30","Dir":"Inbound","MsgSz":82000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # [26] Calendar invite
-    '{"datetime":"2024-12-16T17:36:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<calendar-001@{{LAB_DOMAIN}}>","Subject":"Accepted: Weekly Standup - Tuesday 10am","headerFrom":"admin@{{LAB_DOMAIN}}","Sender":"admin@{{LAB_DOMAIN}}","Rcpt":"emily.jones@{{LAB_DOMAIN}}","Act":"Acc","attachments":"invite.ics","AttCnt":1,"AttSz":2800,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":8500}',
+    '{"datetime":"2024-12-16T17:36:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<calendar-001@{{LAB_DOMAIN}}>","Subject":"Accepted: Weekly Standup - Tuesday 10am","headerFrom":"{{PROTECT_EMAIL}}","Sender":"{{PROTECT_EMAIL}}","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"invite.ics","AttCnt":1,"AttSz":2800,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":8500}',
 
     # [27] Okta password reset notification
-    '{"datetime":"2024-12-16T17:37:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<okta-reset-001@okta.example.com>","Subject":"Your password was successfully changed","headerFrom":"noreply@okta.example.com","Sender":"noreply@okta.example.com","senderEnvelope":"noreply@okta.example.com","Rcpt":"admin@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_128_GCM_SHA256","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"52.21.30.15","Dir":"Inbound","MsgSz":12400,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+    '{"datetime":"2024-12-16T17:37:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<okta-reset-001@okta.example.com>","Subject":"Your password was successfully changed","headerFrom":"noreply@okta.example.com","Sender":"noreply@okta.example.com","senderEnvelope":"noreply@okta.example.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_128_GCM_SHA256","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"52.21.30.15","Dir":"Inbound","MsgSz":12400,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # [28] Automated report delivery
     '{"datetime":"2024-12-16T17:38:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<report-001@{{LAB_DOMAIN}}>","Subject":"Daily SIEM Summary Report - Dec 16","headerFrom":"siem-reports@{{LAB_DOMAIN}}","Sender":"siem-reports@{{LAB_DOMAIN}}","Rcpt":"soc-team@{{LAB_DOMAIN}}","Act":"Acc","attachments":"daily_siem_summary_2024-12-16.pdf","AttCnt":1,"AttSz":345000,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":352000}',
@@ -1241,6 +1254,8 @@ def main():
     print("  export ATTACKER_IP=x.x.x.x  export DETECT_IP=x.x.x.x")
     print("  export PROTECT_IP=x.x.x.x   export UNMANAGED_IP=x.x.x.x")
     print("  export UBUNTU_IP=x.x.x.x")
+    print("  export DETECT_USER=\"warp.duck-dt\"  export DETECT_EMAIL=\"warp.duck-dt@lab.example.com\"")
+    print("  export PROTECT_USER=\"warp.duck-bl\"  export PROTECT_EMAIL=\"warp.duck-bl@lab.example.com\"")
     print("  Then run: python3 portable_sender.py --init-config")
     print()
 
