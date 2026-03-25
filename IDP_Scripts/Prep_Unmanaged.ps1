@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  Unmanaged Host Prep — Disable Defender + Download Mimikatz
 #  Run FIRST, before the IDP Attack Menu
 # ============================================================
@@ -67,7 +67,7 @@ if (Test-Path $mimiExe) {
 
 # Verify mimikatz exists
 if (-not (Test-Path $mimiExe)) {
-    Write-Host "[!] mimikatz.exe not found at $mimiExe — checking subfolder..." -ForegroundColor Yellow
+    Write-Host "[!] mimikatz.exe not found at $mimiExe - checking subfolder..." -ForegroundColor Yellow
     $found = Get-ChildItem -Path $mimiDir -Recurse -Filter "mimikatz.exe" | Select-Object -First 1
     if ($found) {
         Write-Host "[+] Found at: $($found.FullName)" -ForegroundColor Green

@@ -1,5 +1,5 @@
-# ============================================================
-#  Identity Attack Menu — Unmanaged Workstation
+﻿# ============================================================
+#  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
 # ============================================================
@@ -15,7 +15,7 @@ $idpDir = "C:\IDP_Files"
 $mimiExe = "$idpDir\Mimikatz\x64\mimikatz.exe"
 
 function Show-Menu {
-    param ([string]$Title = 'Identity Attacks — Unmanaged Host')
+    param ([string]$Title = 'Identity Attacks - Unmanaged Host')
     Clear-Host
     Write-Host
     Write-Host "================ $Title ================" -ForegroundColor Cyan
@@ -71,7 +71,7 @@ do {
 
         '2' {
             Clear-Host
-            Write-Host "[Step 2] Credential Scanning — kerbrute" -ForegroundColor Cyan
+            Write-Host "[Step 2] Credential Scanning - kerbrute" -ForegroundColor Cyan
             Write-Host "         Spraying password against AD accounts..." -ForegroundColor Gray
             Write-Host "         Triggers: CredentialScanningActiveDirectory" -ForegroundColor Yellow
             Write-Host
@@ -81,7 +81,7 @@ do {
 
         '3' {
             Clear-Host
-            Write-Host "[Step 3] AD-CS Recon — certipy" -ForegroundColor Cyan
+            Write-Host "[Step 3] AD-CS Recon - certipy" -ForegroundColor Cyan
             Write-Host "         Enumerating certificate templates..." -ForegroundColor Gray
             Write-Host
 
@@ -130,7 +130,7 @@ do {
 
         '6' {
             Clear-Host
-            Write-Host "[Step 6] Kerberoasting — svc_runbook (SPN: web/svc_runbook)" -ForegroundColor Cyan
+            Write-Host "[Step 6] Kerberoasting - svc_runbook (SPN: web/svc_runbook)" -ForegroundColor Cyan
             Write-Host "         Requesting TGS for service accounts with SPNs..." -ForegroundColor Gray
             Write-Host "         Triggers: Kerberoasting detection" -ForegroundColor Yellow
             Write-Host
@@ -152,7 +152,7 @@ do {
 
         '7' {
             Clear-Host
-            Write-Host "[Step 7] PtH & DCSync — svc_runbook" -ForegroundColor Cyan
+            Write-Host "[Step 7] PtH & DCSync - svc_runbook" -ForegroundColor Cyan
             Write-Host "         Using svc_runbook NTLM hash for Pass-the-Hash..." -ForegroundColor Gray
             Write-Host "         Triggers: PassTheHash, StaleAccount, DCSync" -ForegroundColor Yellow
             Write-Host
@@ -162,7 +162,7 @@ do {
 
         '8' {
             Clear-Host
-            Write-Host "[Step 8] PtH & RDP to BL — svc_runbook" -ForegroundColor Cyan
+            Write-Host "[Step 8] PtH & RDP to BL - svc_runbook" -ForegroundColor Cyan
             Write-Host "         Lateral movement to managed host..." -ForegroundColor Gray
             Write-Host "         Triggers: PassTheHash (second hit)" -ForegroundColor Yellow
             Write-Host
