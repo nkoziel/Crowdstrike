@@ -658,10 +658,10 @@ FORTINET_SAMPLES = [
     '<45>date=2024-12-16 time=17:50:45 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371445000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{UNMANAGED_IP}} srcport=49750 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=88 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200300 proto=6 action="close" policyid=10 policytype="policy" service="Kerberos" trandisp="noop" app="Kerberos" appcat="network.service" duration=1 sentbyte=4200 rcvdbyte=8500 sentpkt=12 rcvdpkt=15 msg="Session closed"',
 
     # =====================================================================
-    # PASS-THE-HASH: Unmanaged → Protect (BL) via stale account
+    # PASS-THE-HASH: Unmanaged → Protect (BL) via svc_runbook
     # =====================================================================
 
-    # [110] Unmanaged → BL: PtH SMB connection (stale_svc_account)
+    # [110] Unmanaged → BL: PtH SMB connection (svc_runbook — privileged svc account)
     '<45>date=2024-12-16 time=18:00:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734372000000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{UNMANAGED_IP}} srcport=49900 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41300100 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=45 sentbyte=12000 rcvdbyte=85000 sentpkt=55 rcvdpkt=120 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
 
     # =====================================================================
@@ -934,12 +934,13 @@ SCENARIO_PHASES = [
     # Phase 2: Brute Force → Unmanaged Host
     {
         "name": "Phase 2: Brute Force to Unmanaged Host",
-        "desc": "Attacker brute-forces RDP to unmanaged host via VPN tunnel, gains 'demo' local account",
+        "desc": "Attacker brute-forces RDP to unmanaged host via VPN tunnel, gains 'demo' domain account",
         "delay": 2.0,
         "pause": True,
         "pause_msg": "Attacker now has access to the Unmanaged host (demo account).\n"
-                     "  >> On the Unmanaged host, you can now trigger Identity detections:\n"
-                     "     - AssetUnmanaged (unmanaged device on network)\n"
+                     "  >> On the Unmanaged host, run IDP Menu:\n"
+                     "     Step 1: Dump local credentials (discover svc_runbook hash)\n"
+                     "     Step 2: Credential Scanning (kerbrute)\n"
                      "  Press Enter to continue to Phishing Campaign...",
         "logs": [
             ("fortinet", 99),   # RDP denied #1
@@ -979,9 +980,10 @@ SCENARIO_PHASES = [
         "delay": 2.0,
         "pause": True,
         "pause_msg": "Unmanaged host is scanning the network and enumerating AD.\n"
-                     "  >> On the Unmanaged host, perform these actions now:\n"
-                     "     - CredentialScanningActiveDirectory\n"
-                     "     - Discover stale account in AD\n"
+                     "  >> On the Unmanaged host, run IDP Menu:\n"
+                     "     Step 3: AD-CS Recon (certipy)\n"
+                     "     Step 4: RDP to DT or BL as 'demo' (local admin)\n"
+                     "     Step 5: Dump creds on target → discover svc_runbook NTLM hash\n"
                      "  Press Enter to continue to Credential Attacks...",
         "logs": [
             ("fortinet", 104),  # Port scan: SSH to DC
@@ -996,16 +998,18 @@ SCENARIO_PHASES = [
     # Phase 5: Credential Attack / Pass-the-Hash
     {
         "name": "Phase 5: Credential Attack — Pass-the-Hash",
-        "desc": "Unmanaged host uses stale account NTLM hash to access Protect (BL) machine",
+        "desc": "Unmanaged host uses svc_runbook NTLM hash to access Protect (BL) machine",
         "delay": 3.0,
         "pause": True,
-        "pause_msg": "Stale account credentials obtained. Ready for Pass-the-Hash.\n"
-                     "  >> On the Unmanaged host, perform Pass-the-Hash to BL now.\n"
+        "pause_msg": "svc_runbook hash obtained from credential dump. Ready for Pass-the-Hash.\n"
+                     "  >> On the Unmanaged host, run IDP Menu:\n"
+                     "     Step 6: PtH with svc_runbook → DCSync\n"
+                     "     Step 7: PtH & RDP to BL\n"
                      "     - PassTheHash detection should fire\n"
-                     "     - StaleAccount detection should fire\n"
+                     "     - StaleAccount detection should fire (svc_runbook unused for 90+ days)\n"
                      "  Press Enter to continue to DT Compromise...",
         "logs": [
-            ("fortinet", 110),  # Unmanaged → BL PtH SMB (stale account)
+            ("fortinet", 110),  # Unmanaged → BL PtH SMB (svc_runbook)
             ("fortinet", 80),   # Unmanaged: normal SMB (cover)
         ],
     },
