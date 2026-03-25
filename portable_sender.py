@@ -572,6 +572,111 @@ FORTINET_SAMPLES = [
 
     # [90] Detect -> attacker.lab.local: staged payload download
     '<45>date=2024-12-16 time=18:25:50 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373550000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52300 srcintf="port5" srcintfrole="lan" dstip={{ATTACKER_IP}} dstport=8080 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=40400260 proto=6 action="passthrough" policyid=10 service="HTTP" httpmethod="GET" hostname="attacker.lab.local" url="/payloads/stage2.exe" reqtype="direct" cat=26 catdesc="Malicious Websites" msg="URL belongs to a permitted category in policy"',
+
+    # =====================================================================
+    # CVE EXPLOITATION — Perimeter breach via FortiGate vulnerability
+    # Triggers NGSIEM rules: "FortiOS CVE-2024-55591" + "CVE 2023-27997"
+    # =====================================================================
+
+    # [91] CVE-2024-55591: jsconsole login from loopback (super-admin exploit)
+    '<45>date=2024-12-16 time=17:30:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370200000000000 tz="+0000" logid="0100032001" type="event" subtype="system" level="alert" vd="root" logdesc="Admin login successful" sn="1734370200" user="admin" ui="jsconsole(127.0.0.1)" method="jsconsole" srcip=127.0.0.1 dstip=10.0.0.254 action="login" status="success" msg="Administrator admin logged in successfully from jsconsole"',
+
+    # [92] CVE-2023-27997: sslvpnd crash (SSL VPN heap overflow)
+    '<45>date=2024-12-16 time=17:30:05 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370205000000000 tz="+0000" logid="0100032099" type="event" subtype="system" level="alert" vd="root" logdesc="Application crash" sn="1734370205" action="crash" msg="Application crashed: sslvpnd crashed, signal 11 received, re-launching" service="sslvpnd" pid=12847',
+
+    # =====================================================================
+    # POST-CVE: Attacker admin manipulation on FortiGate
+    # Triggers: "Administrator User Created", "User Added to Group",
+    #           "SSLVPN Settings Changed", "Short Lived Account",
+    #           "Event or Local Traffic Logging Disabled"
+    # =====================================================================
+
+    # [93] Backdoor admin account created
+    '<45>date=2024-12-16 time=17:30:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370230000000000 tz="+0000" logid="0100044546" type="event" subtype="system" level="information" vd="root" logdesc="Object attribute configured" user="admin" ui="jsconsole(127.0.0.1)" action="Add" cfgtid=1734370230 cfgpath="system.admin" cfgobj="svc_backup" cfgattr="N/A" msg="Add system.admin svc_backup"',
+
+    # [94] Backdoor admin added to super_admin group
+    '<45>date=2024-12-16 time=17:30:35 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370235000000000 tz="+0000" logid="0100044546" type="event" subtype="system" level="information" vd="root" logdesc="Object attribute configured" user="admin" ui="jsconsole(127.0.0.1)" action="Edit" cfgtid=1734370235 cfgpath="user.group" cfgobj="super_admin" cfgattr="member[admin->admin svc_backup]" msg="Edit user.group super_admin"',
+
+    # [95] SSLVPN settings modified (attacker opens VPN access)
+    '<45>date=2024-12-16 time=17:30:40 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370240000000000 tz="+0000" logid="0100044546" type="event" subtype="system" level="information" vd="root" logdesc="Attribute configured" user="svc_backup" ui="https({{ATTACKER_EXT_IP}})" action="Edit" cfgtid=1734370240 cfgpath="vpn.ssl.settings" cfgobj="ssl.settings" cfgattr="idle-timeout[300->3600] auth-timeout[28800->86400]" msg="Edit vpn.ssl.settings"',
+
+    # [96] Logging disabled (attacker covers tracks)
+    '<45>date=2024-12-16 time=17:30:45 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370245000000000 tz="+0000" logid="0100044546" type="event" subtype="system" level="warning" vd="root" logdesc="Object attribute configured" user="svc_backup" ui="https({{ATTACKER_EXT_IP}})" action="Edit" cfgtid=1734370245 cfgpath="log.eventfilter" cfgobj="eventfilter" cfgattr="event[enable->disable] system[enable->disable]" msg="Edit log.eventfilter"',
+
+    # [97] Backdoor admin deleted (short-lived account — cover tracks)
+    '<45>date=2024-12-16 time=17:31:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370260000000000 tz="+0000" logid="0100044546" type="event" subtype="system" level="information" vd="root" logdesc="Object attribute configured" user="admin" ui="jsconsole(127.0.0.1)" action="Delete" cfgtid=1734370260 cfgpath="system.admin" cfgobj="svc_backup" cfgattr="N/A" msg="Delete system.admin svc_backup"',
+
+    # =====================================================================
+    # VPN TUNNEL + BRUTE FORCE → UNMANAGED HOST
+    # Attacker uses CVE access to establish VPN, then brute-forces Unmanaged
+    # =====================================================================
+
+    # [98] SSL VPN tunnel established from attacker external IP
+    '<45>date=2024-12-16 time=17:31:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370290000000000 tz="+0000" logid="0101039424" type="event" subtype="vpn" level="notice" vd="root" logdesc="SSL VPN tunnel up" msg="SSL tunnel established from {{ATTACKER_EXT_IP}}, user svc_backup, assigned IP 10.212.134.50" action="tunnel-up" tunneltype="ssl-tunnel" tunnelid=99 remip={{ATTACKER_EXT_IP}} tunnelip=10.212.134.50 user="svc_backup" group="super_admin" dst_host="N/A"',
+
+    # [99] Brute force: VPN pool → Unmanaged RDP denied #1
+    '<45>date=2024-12-16 time=17:32:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370320000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip=10.212.134.50 srcport=49500 srcintf="ssl.root" srcintfrole="undefined" dstip={{UNMANAGED_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41100100 proto=6 action="deny" policyid=0 policytype="policy" service="RDP" duration=0 sentbyte=0 rcvdbyte=0 sentpkt=0 rcvdpkt=0 msg="Session denied: authentication failed"',
+
+    # [100] Brute force: VPN pool → Unmanaged RDP denied #2
+    '<45>date=2024-12-16 time=17:32:05 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370325000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip=10.212.134.50 srcport=49510 srcintf="ssl.root" srcintfrole="undefined" dstip={{UNMANAGED_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41100101 proto=6 action="deny" policyid=0 policytype="policy" service="RDP" duration=0 sentbyte=0 rcvdbyte=0 sentpkt=0 rcvdpkt=0 msg="Session denied: authentication failed"',
+
+    # [101] Brute force: VPN pool → Unmanaged RDP denied #3
+    '<45>date=2024-12-16 time=17:32:10 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370330000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip=10.212.134.50 srcport=49520 srcintf="ssl.root" srcintfrole="undefined" dstip={{UNMANAGED_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41100102 proto=6 action="deny" policyid=0 policytype="policy" service="RDP" duration=0 sentbyte=0 rcvdbyte=0 sentpkt=0 rcvdpkt=0 msg="Session denied: authentication failed"',
+
+    # [102] Brute force SUCCESS: VPN pool → Unmanaged RDP (demo account)
+    '<45>date=2024-12-16 time=17:32:20 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734370340000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.212.134.50 srcport=49530 srcintf="ssl.root" srcintfrole="undefined" dstip={{UNMANAGED_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41100103 proto=6 action="accept" policyid=5 policytype="policy" service="RDP" trandisp="noop" app="RDP" appcat="network.service" duration=600 sentbyte=125000 rcvdbyte=890000 sentpkt=500 rcvdpkt=700 osname="Windows" srcswversion="Windows 10" msg="Session accepted"',
+
+    # =====================================================================
+    # DT CLICKS PHISHING LINK — triggers "URL Accessed From Malicious Email"
+    # Same domain as Mimecast phishing email → NGSIEM cross-vendor correlation
+    # =====================================================================
+
+    # [103] DT visits securecorp-benefits.com (clicked phishing link)
+    '<45>date=2024-12-16 time=18:25:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373500000000000 tz="+0000" logid="0316013056" type="utm" subtype="webfilter" eventtype="ftgd_allow" level="warning" vd="root" user="{{DETECT_USER}}" srcip={{DETECT_IP}} srcport=52050 srcintf="port5" srcintfrole="lan" dstip=198.51.100.77 dstport=443 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=40400050 proto=6 action="passthrough" policyid=5 service="HTTPS" hostname="securecorp-benefits.com" url="/Q4-Benefits/login.php" reqtype="direct" cat=76 catdesc="Newly Observed Domain" msg="URL belongs to a permitted category in policy"',
+
+    # =====================================================================
+    # UNMANAGED HOST INTERNAL RECON — port scanning + AD enumeration
+    # Triggers: "Internal Targeted Service Discovery Scan"
+    # =====================================================================
+
+    # [104] Unmanaged → DC: SSH scan (port 22)
+    '<45>date=2024-12-16 time=17:50:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371400000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=49600 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=22 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200100 proto=6 action="close" policyid=10 policytype="policy" service="SSH" trandisp="noop" duration=1 sentbyte=0 rcvdbyte=0 sentpkt=1 rcvdpkt=1 msg="Session closed"',
+
+    # [105] Unmanaged → BL: RDP scan (port 3389)
+    '<45>date=2024-12-16 time=17:50:02 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371402000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=49602 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=3389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200102 proto=6 action="close" policyid=10 policytype="policy" service="RDP" trandisp="noop" duration=1 sentbyte=0 rcvdbyte=0 sentpkt=1 rcvdpkt=1 msg="Session closed"',
+
+    # [106] Unmanaged → DC: RPC scan (port 135)
+    '<45>date=2024-12-16 time=17:50:04 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371404000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=49604 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=135 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200104 proto=6 action="close" policyid=10 policytype="policy" service="DCE-RPC" trandisp="noop" duration=1 sentbyte=0 rcvdbyte=0 sentpkt=1 rcvdpkt=1 msg="Session closed"',
+
+    # [107] Unmanaged → DT: WinRM scan (port 5985)
+    '<45>date=2024-12-16 time=17:50:06 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371406000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip={{UNMANAGED_IP}} srcport=49606 srcintf="port5" srcintfrole="lan" dstip={{DETECT_IP}} dstport=5985 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200106 proto=6 action="close" policyid=10 policytype="policy" service="HTTP" trandisp="noop" duration=1 sentbyte=0 rcvdbyte=0 sentpkt=1 rcvdpkt=1 msg="Session closed"',
+
+    # [108] Unmanaged → DC: Aggressive LDAP enumeration (rapid sessions)
+    '<45>date=2024-12-16 time=17:50:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371430000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{UNMANAGED_IP}} srcport=49700 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=389 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200200 proto=6 action="close" policyid=10 policytype="policy" service="LDAP" trandisp="noop" app="LDAP" appcat="network.service" duration=2 sentbyte=18500 rcvdbyte=245000 sentpkt=85 rcvdpkt=320 msg="Session closed"',
+
+    # [109] Unmanaged → DC: Kerberos from non-domain machine (anomalous)
+    '<45>date=2024-12-16 time=17:50:45 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734371445000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{UNMANAGED_IP}} srcport=49750 srcintf="port5" srcintfrole="lan" dstip=10.0.0.5 dstport=88 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41200300 proto=6 action="close" policyid=10 policytype="policy" service="Kerberos" trandisp="noop" app="Kerberos" appcat="network.service" duration=1 sentbyte=4200 rcvdbyte=8500 sentpkt=12 rcvdpkt=15 msg="Session closed"',
+
+    # =====================================================================
+    # PASS-THE-HASH: Unmanaged → Protect (BL) via stale account
+    # =====================================================================
+
+    # [110] Unmanaged → BL: PtH SMB connection (stale_svc_account)
+    '<45>date=2024-12-16 time=18:00:00 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734372000000000000 tz="+0000" logid="0000000013" type="traffic" subtype="forward" level="warning" vd="root" srcip={{UNMANAGED_IP}} srcport=49900 srcintf="port5" srcintfrole="lan" dstip={{PROTECT_IP}} dstport=445 dstintf="port5" dstintfrole="lan" srccountry="Reserved" dstcountry="Reserved" sessionid=41300100 proto=6 action="accept" policyid=10 policytype="policy" service="SMB" trandisp="noop" app="SMB" appcat="network.service" duration=45 sentbyte=12000 rcvdbyte=85000 sentpkt=55 rcvdpkt=120 osname="Windows" srcswversion="Windows 10" mastersrcmac="aa:bb:cc:00:01:27" masterdstmac="aa:bb:cc:00:01:30" msg="Session accepted"',
+
+    # =====================================================================
+    # DNS TUNNELING — Unmanaged host exfiltrates via DNS
+    # Triggers: "Domains with Large Number of Subdomain DNS Queries"
+    # =====================================================================
+
+    # [111] DNS tunneling: encoded data query #1
+    '<45>date=2024-12-16 time=18:28:30 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373710000000000 tz="+0000" logid="1501054802" type="utm" subtype="dns" level="information" vd="root" srcip={{UNMANAGED_IP}} srcport=53214 srcintf="port5" srcintfrole="lan" dstip=8.8.8.8 dstport=53 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=41400100 proto=17 xid=23456 qname="a3f8b2c1e9d7.data.exfil-tunnel.example.com" qtype="TXT" qtypeval=16 qclass="IN" ipaddr="N/A" msg="Domain queried" action="pass" cat=255 catdesc="Uncategorized"',
+
+    # [112] DNS tunneling: encoded data query #2
+    '<45>date=2024-12-16 time=18:28:32 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373712000000000 tz="+0000" logid="1501054802" type="utm" subtype="dns" level="information" vd="root" srcip={{UNMANAGED_IP}} srcport=53215 srcintf="port5" srcintfrole="lan" dstip=8.8.8.8 dstport=53 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=41400101 proto=17 xid=23457 qname="f7d2a8b4c6e1.data.exfil-tunnel.example.com" qtype="TXT" qtypeval=16 qclass="IN" ipaddr="N/A" msg="Domain queried" action="pass" cat=255 catdesc="Uncategorized"',
+
+    # [113] DNS tunneling: encoded data query #3
+    '<45>date=2024-12-16 time=18:28:34 devname="FortiGate-200F" devid="FG200FTEST00003" eventtime=1734373714000000000 tz="+0000" logid="1501054802" type="utm" subtype="dns" level="information" vd="root" srcip={{UNMANAGED_IP}} srcport=53216 srcintf="port5" srcintfrole="lan" dstip=8.8.8.8 dstport=53 dstintf="wan1" dstintfrole="wan" srccountry="Reserved" dstcountry="United States" sessionid=41400102 proto=17 xid=23458 qname="b9e3d5a7f2c8.data.exfil-tunnel.example.com" qtype="TXT" qtypeval=16 qclass="IN" ipaddr="N/A" msg="Domain queried" action="pass" cat=255 catdesc="Uncategorized"',
 ]
 
 
@@ -735,6 +840,23 @@ MIMECAST_SAMPLES = [
 
     # [31] TRIGGER (delivery): tstark phishing delivered to DT
     '{"datetime":"2024-12-16T18:14:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00893","MsgId":"<atk003@workshop.cs-labs.net>","Subject":"Stark Industries - Confidential Project Files","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":680,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # =====================================================================
+    # PHISHING CAMPAIGN — Broader targeting (some blocked, some delivered)
+    # Same tstark@workshop.cs-labs.net sender for NGSIEM correlation
+    # =====================================================================
+
+    # [32] tstark phishing to helpdesk@ — BLOCKED by Mimecast URL scan
+    '{"datetime":"2024-12-16T18:13:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00894","MsgId":"<atk004@workshop.cs-labs.net>","Subject":"Urgent: Review Security Patch","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"helpdesk@{{LAB_DOMAIN}}","Act":"Hld","attachments":"Security_Patch_v2.zip","AttCnt":1,"AttSz":275000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"Y","HldRsn":"URL scan detected suspicious content in attachment","SpamScore":45,"SpfResult":"neutral","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","MsgSz":290000}',
+
+    # [33] tstark phishing to info@ — BLOCKED by spam filter
+    '{"datetime":"2024-12-16T18:13:10+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<atk005@workshop.cs-labs.net>","Subject":"Confidential: Project Jericho Update","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","senderEnvelope":"tstark@workshop.cs-labs.net","Rcpt":"info@{{LAB_DOMAIN}}","Act":"Rej","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":72,"SpamInfo":"virus score=clean, spam score=72, bulk sender, suspicious sender","SpfResult":"fail","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","Dir":"Inbound","MsgSz":310000,"RejType":"spam","RejCode":"550","RejInfo":"Message rejected: suspicious sender pattern detected"}',
+
+    # [34] tstark phishing to BL — delivered (user doesn't click)
+    '{"datetime":"2024-12-16T18:13:30+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00895","MsgId":"<atk006@workshop.cs-labs.net>","Subject":"Workshop Files - Please Review ASAP","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","attachments":"Workshop_Review_Notes.zip","AttCnt":1,"AttSz":198000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":15,"SpfResult":"neutral","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","MsgSz":210000}',
+
+    # [35] securecorp phishing to generic soc-team@ — BLOCKED by AV
+    '{"datetime":"2024-12-16T18:13:40+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<atk007@securecorp-benefits.com>","Subject":"Q4 Benefits - Final Reminder","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"soc-team@{{LAB_DOMAIN}}","Act":"Rej","FileName":"Benefits_Enrollment_Final.xlsm","FileExt":"xlsm","FileSz":195000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"198.51.100.77","SpamScore":22,"SpfResult":"pass","DkimResult":"pass","msg":"Macro malware detected in Excel attachment — rejected"}',
 ]
 
 
@@ -756,123 +878,214 @@ VENDOR_REGISTRY = {
 
 ###########################################################################
 #                    ATTACK TIMELINE SCENARIO                             #
-# Ordered phases for --vendor all --count 0 (no CSV)                     #
-# Tuples: (vendor, sample_index)                                         #
+# Phased attack for --vendor all --count 0 (no CSV)                      #
+# Each phase: (name, description, delay, pause_after, [(vendor, idx)...]) #
 ###########################################################################
 
-SCENARIO_SEQUENCE = [
-    # ------------------------------------------------------------------
-    # Phase 1: Normal Baseline  (~20 logs)
-    # Lab machines doing everyday SaaS browsing, updates, benign email
-    # ------------------------------------------------------------------
-    ("fortinet", 67),   # Protect: Slack
-    ("mimecast", 25),   # Newsletter to {{DETECT_EMAIL}}
-    ("fortinet", 68),   # Protect: Teams
-    ("fortinet", 77),   # Ubuntu: NTP sync
-    ("fortinet", 73),   # Detect: AWS Console
-    ("mimecast", 26),   # Calendar invite (internal)
-    ("fortinet", 69),   # Protect: Zoom
-    ("fortinet", 74),   # Detect: GitHub
-    ("mimecast", 27),   # Okta password reset
-    ("fortinet", 70),   # Protect: Salesforce
-    ("fortinet", 78),   # Ubuntu: OCSP check
-    ("fortinet", 75),   # Detect: Google Search
-    ("mimecast", 29),   # Vendor invoice
-    ("fortinet", 71),   # Protect: Windows Update
-    ("fortinet", 79),   # Ubuntu: apt mirror
-    ("fortinet", 76),   # Detect: O365 Outlook
-    ("mimecast", 28),   # Automated SIEM report
-    ("fortinet", 72),   # Protect: Dropbox
-    ("fortinet", 80),   # Unmanaged: SMB file share
-    ("fortinet", 81),   # Unmanaged: LDAP auth
-    ("fortinet", 86),   # Unmanaged: Gmail web browsing
-    ("fortinet", 87),   # Unmanaged: DNS query
-
-    # ------------------------------------------------------------------
-    # Phase 2: Spearphishing  (~10 logs)
-    # First wave BLOCKED by Mimecast, second wave gets through
-    # Same attacker domains link the detections in NGSIEM
-    # ------------------------------------------------------------------
-    ("mimecast", 19),   # Legit: Internal IT notification
-    ("mimecast", 9),    # BLOCKED: .xlsm from securecorp-benefits.com -> {{DETECT_EMAIL}}
-    ("mimecast", 10),   # BLOCKED: .html from it-helpdesk-portal.com -> {{PROTECT_EMAIL}}
-    ("mimecast", 20),   # Legit: External partner email to {{DETECT_EMAIL}}
-    ("mimecast", 21),   # TRIGGER: Phishing .xlsm process (same domain, diff subject — evades)
-    ("mimecast", 22),   # TRIGGER: Phishing .xlsm delivered to {{DETECT_EMAIL}}
-    ("mimecast", 23),   # TRIGGER: Phishing .html process (same domain, diff subject)
-    ("mimecast", 24),   # TRIGGER: Phishing .html delivered to {{PROTECT_EMAIL}}
-    ("mimecast", 30),   # TRIGGER: tstark@workshop.cs-labs.net -> {{DETECT_EMAIL}} (links to real inbox)
-    ("mimecast", 31),   # TRIGGER: tstark phishing delivered to {{DETECT_EMAIL}}
-
-    # ------------------------------------------------------------------
-    # Phase 3: Cover Traffic  (~10 logs)
-    # More normal activity — victim hasn't opened attachment yet
-    # ------------------------------------------------------------------
-    ("fortinet", 82),   # Protect -> Detect internal traffic
-    ("fortinet", 67),   # Protect: Slack (repeat with variation)
-    ("fortinet", 58),   # Protect: Google browsing (original sample)
-    ("fortinet", 76),   # Detect: O365 (repeat)
-    ("mimecast", 0),    # Receipt: legit accepted
-    ("fortinet", 59),   # Ubuntu: apt update (original sample)
-    ("fortinet", 74),   # Detect: GitHub (repeat)
-    ("mimecast", 4),    # Process: no attachment
-    ("fortinet", 68),   # Protect: Teams (repeat)
-    ("fortinet", 75),   # Detect: Google Search (repeat)
-
-    # ------------------------------------------------------------------
-    # Phase 4: Compromise & Recon  (~8 logs)
-    # Detect machine starts suspicious HTTP GETs, mixed with normal
-    # ------------------------------------------------------------------
-    ("fortinet", 73),   # Detect: AWS Console (normal — still working)
-    ("fortinet", 62),   # TRIGGER: GET /proc/self/environ
-    ("fortinet", 76),   # Detect: O365 (normal cover)
-    ("fortinet", 63),   # TRIGGER: GET /etc/passwd
-    ("fortinet", 64),   # TRIGGER: GET /etc/security/passwd
-    ("mimecast", 2),    # Outbound email (normal cover)
-    ("fortinet", 60),   # Detect: O365 (original sample)
-    ("fortinet", 82),   # Internal traffic cover
-
-    # ------------------------------------------------------------------
-    # Phase 5: C2 & Lateral Movement  (~9 logs)
-    # C2 callback, then adversary probes Protect (BL) from Detect
-    # ------------------------------------------------------------------
-    ("fortinet", 65),   # C2 callback from Detect -> 185.220.101.45
-    ("fortinet", 88),   # C2: Detect -> attacker.lab.local beacon (links to real payloads)
-    ("fortinet", 89),   # C2: Detect -> attacker.lab.local reverse shell
-    ("fortinet", 90),   # C2: Detect -> attacker.lab.local stage2 download
-    ("fortinet", 83),   # RECON: Detect -> Protect SMB probe
-    ("fortinet", 84),   # RECON: Detect -> Protect RDP attempt
-    ("fortinet", 85),   # RECON: Detect -> Protect admin share C$
-    ("fortinet", 61),   # Kali -> Unmanaged SMB exploitation
-    ("fortinet", 80),   # Unmanaged: normal SMB (cover)
-    ("fortinet", 60),   # Kali -> Detect port scan (IPS)
-    ("fortinet", 81),   # Unmanaged: LDAP (cover)
-    ("mimecast", 19),   # Internal IT email (cover)
-
-    # ------------------------------------------------------------------
-    # Phase 6: Data Exfiltration  (~3 logs)
-    # Large upload with cover traffic
-    # ------------------------------------------------------------------
-    ("fortinet", 75),   # Detect: Google (normal cover)
-    ("fortinet", 66),   # TRIGGER: 5.2MB upload exfiltration
-    ("mimecast", 5),    # Delivery: legit (cover)
+SCENARIO_PHASES = [
+    # Phase 0: Normal Baseline
+    {
+        "name": "Phase 0: Normal Baseline",
+        "desc": "Lab machines doing everyday SaaS browsing, updates, benign email",
+        "delay": 1.0,
+        "pause": False,
+        "logs": [
+            ("fortinet", 67),   # Protect: Slack
+            ("mimecast", 25),   # Newsletter to {{DETECT_EMAIL}}
+            ("fortinet", 68),   # Protect: Teams
+            ("fortinet", 77),   # Ubuntu: NTP sync
+            ("fortinet", 73),   # Detect: AWS Console
+            ("mimecast", 26),   # Calendar invite (internal)
+            ("fortinet", 69),   # Protect: Zoom
+            ("fortinet", 74),   # Detect: GitHub
+            ("mimecast", 27),   # Okta password reset
+            ("fortinet", 70),   # Protect: Salesforce
+            ("fortinet", 78),   # Ubuntu: OCSP check
+            ("fortinet", 75),   # Detect: Google Search
+            ("mimecast", 29),   # Vendor invoice
+            ("fortinet", 71),   # Protect: Windows Update
+            ("fortinet", 79),   # Ubuntu: apt mirror
+            ("fortinet", 76),   # Detect: O365 Outlook
+            ("mimecast", 28),   # Automated SIEM report
+            ("fortinet", 72),   # Protect: Dropbox
+            ("fortinet", 80),   # Unmanaged: SMB file share
+            ("fortinet", 81),   # Unmanaged: LDAP auth
+            ("fortinet", 86),   # Unmanaged: Gmail web browsing
+            ("fortinet", 87),   # Unmanaged: DNS query
+        ],
+    },
+    # Phase 1: Perimeter Breach (FortiGate CVE exploitation)
+    {
+        "name": "Phase 1: Perimeter Breach",
+        "desc": "Attacker exploits FortiGate CVE — gains super-admin, creates backdoor, modifies VPN",
+        "delay": 3.0,
+        "pause": False,
+        "logs": [
+            ("fortinet", 91),   # CVE-2024-55591: jsconsole from loopback
+            ("fortinet", 92),   # CVE-2023-27997: sslvpnd crash
+            ("fortinet", 93),   # Backdoor admin created (svc_backup)
+            ("fortinet", 94),   # Backdoor added to super_admin
+            ("fortinet", 95),   # SSLVPN settings modified
+            ("fortinet", 96),   # Event logging disabled
+            ("fortinet", 97),   # Backdoor admin deleted (short-lived)
+            ("fortinet", 98),   # VPN tunnel established
+        ],
+    },
+    # Phase 2: Brute Force → Unmanaged Host
+    {
+        "name": "Phase 2: Brute Force to Unmanaged Host",
+        "desc": "Attacker brute-forces RDP to unmanaged host via VPN tunnel, gains 'demo' local account",
+        "delay": 2.0,
+        "pause": True,
+        "pause_msg": "Attacker now has access to the Unmanaged host (demo account).\n"
+                     "  >> On the Unmanaged host, you can now trigger Identity detections:\n"
+                     "     - AssetUnmanaged (unmanaged device on network)\n"
+                     "  Press Enter to continue to Phishing Campaign...",
+        "logs": [
+            ("fortinet", 99),   # RDP denied #1
+            ("fortinet", 100),  # RDP denied #2
+            ("fortinet", 101),  # RDP denied #3
+            ("fortinet", 102),  # RDP SUCCESS (demo account)
+        ],
+    },
+    # Phase 3: Phishing Campaign
+    {
+        "name": "Phase 3: Phishing Campaign",
+        "desc": "Broad phishing from tstark@workshop.cs-labs.net + securecorp-benefits.com\n"
+                "               Some blocked by Mimecast, some delivered to DT and BL",
+        "delay": 1.5,
+        "pause": False,
+        "logs": [
+            ("mimecast", 19),   # Legit: Internal IT notification
+            ("mimecast", 33),   # BLOCKED: tstark to info@ (spam filter)
+            ("mimecast", 32),   # BLOCKED: tstark to helpdesk@ (URL scan)
+            ("mimecast", 35),   # BLOCKED: securecorp to soc-team@ (AV)
+            ("mimecast", 9),    # BLOCKED: .xlsm from securecorp -> {{DETECT_EMAIL}} (AV)
+            ("mimecast", 10),   # BLOCKED: .html from helpdesk -> {{PROTECT_EMAIL}} (AV)
+            ("mimecast", 20),   # Legit: External partner email
+            ("mimecast", 34),   # tstark to BL — delivered (not clicked)
+            ("mimecast", 21),   # TRIGGER: securecorp .xlsm process → DT
+            ("mimecast", 22),   # TRIGGER: securecorp .xlsm delivered → DT
+            ("mimecast", 23),   # TRIGGER: helpdesk .html process → BL
+            ("mimecast", 24),   # TRIGGER: helpdesk .html delivered → BL
+            ("mimecast", 30),   # TRIGGER: tstark .zip process → DT
+            ("mimecast", 31),   # TRIGGER: tstark .zip delivered → DT
+        ],
+    },
+    # Phase 4: Unmanaged Internal Recon
+    {
+        "name": "Phase 4: Unmanaged Internal Recon",
+        "desc": "Unmanaged host scans internal network, enumerates AD, requests Kerberos tickets",
+        "delay": 2.0,
+        "pause": True,
+        "pause_msg": "Unmanaged host is scanning the network and enumerating AD.\n"
+                     "  >> On the Unmanaged host, perform these actions now:\n"
+                     "     - CredentialScanningActiveDirectory\n"
+                     "     - Discover stale account in AD\n"
+                     "  Press Enter to continue to Credential Attacks...",
+        "logs": [
+            ("fortinet", 104),  # Port scan: SSH to DC
+            ("fortinet", 105),  # Port scan: RDP to BL
+            ("fortinet", 106),  # Port scan: RPC to DC
+            ("fortinet", 107),  # Port scan: WinRM to DT
+            ("fortinet", 108),  # Aggressive LDAP enum to DC
+            ("fortinet", 109),  # Kerberos from non-domain machine
+            ("fortinet", 59),   # Unmanaged SSH external (cover)
+        ],
+    },
+    # Phase 5: Credential Attack / Pass-the-Hash
+    {
+        "name": "Phase 5: Credential Attack — Pass-the-Hash",
+        "desc": "Unmanaged host uses stale account NTLM hash to access Protect (BL) machine",
+        "delay": 3.0,
+        "pause": True,
+        "pause_msg": "Stale account credentials obtained. Ready for Pass-the-Hash.\n"
+                     "  >> On the Unmanaged host, perform Pass-the-Hash to BL now.\n"
+                     "     - PassTheHash detection should fire\n"
+                     "     - StaleAccount detection should fire\n"
+                     "  Press Enter to continue to DT Compromise...",
+        "logs": [
+            ("fortinet", 110),  # Unmanaged → BL PtH SMB (stale account)
+            ("fortinet", 80),   # Unmanaged: normal SMB (cover)
+        ],
+    },
+    # Phase 6: DT Compromise (user clicks phishing)
+    {
+        "name": "Phase 6: DT Compromise",
+        "desc": "DT user clicks phishing link — suspicious HTTP GETs, C2 callbacks",
+        "delay": 2.0,
+        "pause": False,
+        "logs": [
+            ("fortinet", 73),   # Detect: AWS (normal — still working)
+            ("fortinet", 103),  # TRIGGER: DT visits securecorp-benefits.com (cross-vendor!)
+            ("fortinet", 62),   # TRIGGER: GET /proc/self/environ
+            ("fortinet", 76),   # Detect: O365 (normal cover)
+            ("fortinet", 63),   # TRIGGER: GET /etc/passwd
+            ("fortinet", 64),   # TRIGGER: GET /etc/security/passwd
+            ("fortinet", 65),   # C2: Detect → external 185.220.101.45
+            ("fortinet", 88),   # C2: Detect → attacker.lab.local beacon
+            ("fortinet", 89),   # C2: Detect → attacker.lab.local reverse shell
+            ("fortinet", 90),   # C2: Detect → attacker.lab.local stage2
+        ],
+    },
+    # Phase 7: Convergence & Lateral Movement
+    {
+        "name": "Phase 7: Convergence on BL",
+        "desc": "Both attack paths target BL — DT lateral movement + Unmanaged PtH",
+        "delay": 2.0,
+        "pause": False,
+        "logs": [
+            ("fortinet", 83),   # DT → BL: SMB probe
+            ("fortinet", 84),   # DT → BL: RDP attempt
+            ("fortinet", 85),   # DT → BL: admin share C$
+            ("fortinet", 82),   # Protect ↔ Detect internal (cover)
+            ("fortinet", 61),   # Kali → Unmanaged SMB exploitation
+            ("fortinet", 60),   # Kali → Detect port scan (IPS)
+            ("mimecast", 2),    # Outbound email (cover)
+        ],
+    },
+    # Phase 8: Data Exfiltration
+    {
+        "name": "Phase 8: Data Exfiltration",
+        "desc": "Data upload from DT + DNS tunneling from Unmanaged",
+        "delay": 2.0,
+        "pause": False,
+        "logs": [
+            ("fortinet", 75),   # Detect: Google (cover)
+            ("fortinet", 66),   # TRIGGER: 5.2MB upload exfiltration
+            ("fortinet", 111),  # DNS tunneling query #1
+            ("fortinet", 112),  # DNS tunneling query #2
+            ("fortinet", 113),  # DNS tunneling query #3
+            ("mimecast", 5),    # Delivery: legit (cover)
+        ],
+    },
 ]
 
 
 def build_scenario_queue(vendor_ports, port_override):
-    """Build ordered attack-timeline queue, then append unseen samples shuffled."""
+    """Build phased attack-timeline queue, then append unseen samples shuffled."""
     seen = {"fortinet": set(), "mimecast": set()}
-    queue = []
+    phases = []
 
-    for vendor, idx in SCENARIO_SEQUENCE:
-        samples = VENDOR_REGISTRY[vendor]["samples"]
-        if idx >= len(samples):
-            continue  # safety: skip if index out of range
-        port = port_override if port_override is not None else vendor_ports.get(vendor, SYSLOG_PORT)
-        queue.append((vendor, port, samples[idx]))
-        seen[vendor].add(idx)
+    for phase in SCENARIO_PHASES:
+        phase_logs = []
+        for vendor, idx in phase["logs"]:
+            samples = VENDOR_REGISTRY[vendor]["samples"]
+            if idx >= len(samples):
+                continue  # safety: skip if index out of range
+            port = port_override if port_override is not None else vendor_ports.get(vendor, SYSLOG_PORT)
+            phase_logs.append((vendor, port, samples[idx]))
+            seen[vendor].add(idx)
+        phases.append({
+            "name": phase["name"],
+            "desc": phase["desc"],
+            "delay": phase["delay"],
+            "pause": phase.get("pause", False),
+            "pause_msg": phase.get("pause_msg", ""),
+            "logs": phase_logs,
+        })
 
-    # Append all unseen samples from both vendors, shuffled (background noise)
+    # Append all unseen samples as a final "remainder" phase
     remainder = []
     for vendor in VENDOR_REGISTRY:
         samples = VENDOR_REGISTRY[vendor]["samples"]
@@ -881,9 +1094,17 @@ def build_scenario_queue(vendor_ports, port_override):
             if idx not in seen.get(vendor, set()):
                 remainder.append((vendor, port, sample))
     random.shuffle(remainder)
-    queue.extend(remainder)
+    if remainder:
+        phases.append({
+            "name": "Remaining Samples",
+            "desc": "Background noise — all samples not used in scenario phases",
+            "delay": 0.1,
+            "pause": False,
+            "pause_msg": "",
+            "logs": remainder,
+        })
 
-    return queue
+    return phases
 
 
 ###########################################################################
@@ -1243,6 +1464,8 @@ def main():
                    help='Print curated FortiGate samples for AI parser demo and exit')
     p.add_argument('--init-config', action='store_true',
                    help='Generate config.json from defaults + env vars, then exit')
+    p.add_argument('--no-pause', action='store_true',
+                   help='Skip interactive pauses in scenario mode')
     args = p.parse_args()
 
     # -- Load config -------------------------------------------------------
@@ -1348,9 +1571,12 @@ def main():
                      and not args.csv)
 
     if scenario_mode:
-        queue = build_scenario_queue(vendor_ports, args.port)
-        print("  ** Scenario mode: attack timeline ordering **")
-        print(f"  {len(queue)} logs (scenario sequence + remaining samples)")
+        phases = build_scenario_queue(vendor_ports, args.port)
+        total_logs = sum(len(ph["logs"]) for ph in phases)
+        print("  ** Scenario mode: phased attack timeline **")
+        print(f"  {len(phases)} phases, {total_logs} total logs")
+        if not args.no_pause:
+            print("  Interactive pauses enabled (use --no-pause to skip)")
     else:
         queue = []
         for v in vendors_to_send:
@@ -1380,14 +1606,22 @@ def main():
         if len(vendors_to_send) > 1:
             random.shuffle(queue)
 
-    if not queue:
-        print("ERROR: No logs to send")
-        return 1
+    if scenario_mode:
+        if total_logs == 0:
+            print("ERROR: No logs to send")
+            return 1
+    else:
+        if not queue:
+            print("ERROR: No logs to send")
+            return 1
 
     # -- Resolve DNS once --------------------------------------------------
     print(f"\nHost:    {host}")
     print(f"Vendors: {', '.join(vendors_to_send)}")
-    print(f"Total:   {len(queue)} logs")
+    if scenario_mode:
+        print(f"Total:   {total_logs} logs ({len(phases)} phases)")
+    else:
+        print(f"Total:   {len(queue)} logs")
     print(f"Delay:   {args.delay}s")
     print()
 
@@ -1398,26 +1632,66 @@ def main():
 
     sent = 0
     failed = 0
-    try:
-        for i, (v, port, raw) in enumerate(queue):
-            rewritten = apply_placeholders(raw, placeholders)
-            rewritten = REWRITE_FN[v](rewritten)
-            rewritten = RANDOMIZE_FN[v](rewritten)
-            if v == "mimecast":
-                rewritten = enrich_mimecast_ecs(rewritten)
-            label = extract_log_label(v, rewritten)
-            try:
-                pool.send(port, rewritten)
-                sent += 1
-                ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                print(f"  [{ts}] Sent {i+1}/{len(queue)} OK  "
-                      f"[{v}:{port}] [{label}]  ({len(rewritten)} bytes)")
-            except Exception as e:
-                failed += 1
-                print(f"  [{i+1}/{len(queue)}] FAILED [{v}:{port}] [{label}]: {e}")
+    global_idx = 0
 
-            if args.delay > 0 and i < len(queue) - 1:
-                time.sleep(args.delay)
+    try:
+        if scenario_mode:
+            for phase in phases:
+                # Phase header
+                print(f"\n{'='*70}")
+                print(f"  {phase['name']}")
+                print(f"  {phase['desc']}")
+                print(f"  [{len(phase['logs'])} logs, {phase['delay']}s delay]")
+                print(f"{'='*70}\n")
+
+                for v, port, raw in phase["logs"]:
+                    rewritten = apply_placeholders(raw, placeholders)
+                    rewritten = REWRITE_FN[v](rewritten)
+                    rewritten = RANDOMIZE_FN[v](rewritten)
+                    if v == "mimecast":
+                        rewritten = enrich_mimecast_ecs(rewritten)
+                    label = extract_log_label(v, rewritten)
+                    try:
+                        pool.send(port, rewritten)
+                        sent += 1
+                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                        print(f"  [{ts}] Sent {global_idx+1}/{total_logs} OK  "
+                              f"[{v}:{port}] [{label}]  ({len(rewritten)} bytes)")
+                    except Exception as e:
+                        failed += 1
+                        print(f"  [{global_idx+1}/{total_logs}] FAILED [{v}:{port}] [{label}]: {e}")
+                    global_idx += 1
+                    if phase["delay"] > 0:
+                        time.sleep(phase["delay"])
+
+                # Phase pause
+                if phase["pause"] and not args.no_pause:
+                    print(f"\n  --- PAUSE ---")
+                    print(f"  {phase['pause_msg']}")
+                    input(f"\n  Press Enter to continue >>> ")
+                    print()
+
+        else:
+            # Non-scenario: use existing flat queue logic
+            for i, (v, port, raw) in enumerate(queue):
+                rewritten = apply_placeholders(raw, placeholders)
+                rewritten = REWRITE_FN[v](rewritten)
+                rewritten = RANDOMIZE_FN[v](rewritten)
+                if v == "mimecast":
+                    rewritten = enrich_mimecast_ecs(rewritten)
+                label = extract_log_label(v, rewritten)
+                try:
+                    pool.send(port, rewritten)
+                    sent += 1
+                    ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                    print(f"  [{ts}] Sent {i+1}/{len(queue)} OK  "
+                          f"[{v}:{port}] [{label}]  ({len(rewritten)} bytes)")
+                except Exception as e:
+                    failed += 1
+                    print(f"  [{i+1}/{len(queue)}] FAILED [{v}:{port}] [{label}]: {e}")
+
+                if args.delay > 0 and i < len(queue) - 1:
+                    time.sleep(args.delay)
     finally:
         pool.close_all()
 
