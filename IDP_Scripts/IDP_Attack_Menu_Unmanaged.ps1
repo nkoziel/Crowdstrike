@@ -1,4 +1,4 @@
-﻿# ============================================================
+﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -108,41 +108,104 @@ do {
         '2' {
             Clear-Host
             Write-Host "[Step 2] Network Discovery" -ForegroundColor Cyan
-            Write-Host "         Scanning local subnet for DC, DT, BL..." -ForegroundColor Gray
+            Write-Host "         Enumerating network config, discovering hosts, scanning ports..." -ForegroundColor Gray
             Write-Host "         Generates traffic matching FortiGate port scan logs" -ForegroundColor Yellow
             Write-Host
 
-            Write-Host "--- ARP Table (known hosts) ---" -ForegroundColor Yellow
+            # --- Phase 1: Network config ---
+            Write-Host "--- Network Configuration ---" -ForegroundColor Yellow
+            $adapter = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway }
+            $myIP = $adapter.IPv4Address.IPAddress
+            $gateway = $adapter.IPv4DefaultGateway.NextHop
+            $dnsServers = (Get-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4).ServerAddresses
+
+            Write-Host "  Local IP : $myIP" -ForegroundColor White
+            Write-Host "  Gateway  : $gateway" -ForegroundColor White
+            Write-Host "  DNS      : $($dnsServers -join ', ')" -ForegroundColor White
+            Write-Host
+            Write-Host "  [*] DNS server is likely the Domain Controller" -ForegroundColor Cyan
+            Write-Host
+
+            # --- Phase 2: ARP table + discover hosts ---
+            Write-Host "--- ARP Table (known neighbors) ---" -ForegroundColor Yellow
             arp -a
             Write-Host
 
-            $targets = @{
-                "DC  ($env:ENV_DC_IP)" = @(88, 389, 445, 636)
-                "DT  ($env:ENV_DT)"    = @(3389, 445, 5985, 135)
-                "BL  ($env:ENV_BL)"    = @(3389, 445, 5985, 135)
-            }
+            # Collect IPs to scan: ARP entries (non-broadcast, non-multicast) + DNS servers
+            $arpEntries = arp -a | Select-String '(\d+\.\d+\.\d+\.\d+)' | ForEach-Object {
+                $ip = $_.Matches[0].Value
+                if ($ip -notmatch '^(224\.|239\.|255\.|169\.254)' -and $ip -ne $myIP -and $ip -ne "255.255.255.255") {
+                    $ip
+                }
+            } | Sort-Object -Unique
 
-            Write-Host "--- Port scan of key targets ---" -ForegroundColor Yellow
-            foreach ($target in $targets.GetEnumerator()) {
-                Write-Host "`n  Target: $($target.Key)" -ForegroundColor White
-                $ip = ($target.Key -split '[()]')[1].Trim()
-                foreach ($port in $target.Value) {
+            # Add DNS servers (likely DC on different subnet)
+            $allTargets = @($arpEntries) + @($dnsServers) | Sort-Object -Unique
+            Write-Host "--- Discovered hosts to scan ---" -ForegroundColor Yellow
+            $allTargets | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
+            Write-Host
+
+            # --- Phase 3: Port scan each host ---
+            $scanPorts = @(88, 389, 636, 445, 3389, 135, 5985, 22, 53)
+            $discovered = @()
+
+            Write-Host "--- Port scan (TCP) ---" -ForegroundColor Yellow
+            foreach ($ip in $allTargets) {
+                Write-Host "`n  Scanning $ip ..." -ForegroundColor White
+                $openPorts = @()
+
+                foreach ($port in $scanPorts) {
                     $tcp = New-Object System.Net.Sockets.TcpClient
                     try {
                         $tcp.ConnectAsync($ip, $port).Wait(1000) | Out-Null
                         if ($tcp.Connected) {
                             Write-Host "    Port $port : OPEN" -ForegroundColor Green
-                        } else {
-                            Write-Host "    Port $port : CLOSED/FILTERED" -ForegroundColor Red
+                            $openPorts += $port
                         }
-                    } catch {
-                        Write-Host "    Port $port : CLOSED/FILTERED" -ForegroundColor Red
-                    }
+                    } catch { }
                     $tcp.Close()
+                }
+
+                if ($openPorts.Count -eq 0) {
+                    Write-Host "    No open ports found" -ForegroundColor DarkGray
+                }
+
+                # Auto-identify role based on open ports
+                $role = ""
+                if ($openPorts -contains 88 -and $openPorts -contains 389) {
+                    $role = "DOMAIN CONTROLLER"
+                } elseif ($openPorts -contains 3389 -and $openPorts -contains 445) {
+                    $role = "WORKSTATION/SERVER"
+                } elseif ($ip -eq $gateway) {
+                    $role = "GATEWAY"
+                }
+
+                if ($role) {
+                    Write-Host "    >> Identified: $role" -ForegroundColor Cyan
+                }
+
+                $discovered += [PSCustomObject]@{
+                    IP = $ip
+                    Role = $role
+                    Ports = ($openPorts -join ',')
                 }
             }
 
-            Write-Host "`n[+] Network discovery complete." -ForegroundColor Green
+            # --- Summary ---
+            Write-Host "`n--- Discovery Summary ---" -ForegroundColor Yellow
+            foreach ($h in $discovered) {
+                $label = if ($h.Role) { " [$($h.Role)]" } else { "" }
+                $ports = if ($h.Ports) { " Ports: $($h.Ports)" } else { " (no open ports)" }
+                Write-Host "  $($h.IP)${label}${ports}" -ForegroundColor $(if ($h.Role -eq "DOMAIN CONTROLLER") { "Red" } elseif ($h.Role) { "Yellow" } else { "Gray" })
+            }
+
+            # Save DC IP for other steps
+            $dcHost = $discovered | Where-Object { $_.Role -eq "DOMAIN CONTROLLER" } | Select-Object -First 1
+            if ($dcHost) {
+                Write-Host "`n[+] Domain Controller found: $($dcHost.IP)" -ForegroundColor Green
+                $dcHost.IP | Out-File -FilePath "$idpDir\discovered_dc.txt" -Encoding ASCII
+            }
+
             Write-Host "[*] Next: Step 3 (LDAP recon via PtH) to enumerate AD." -ForegroundColor Cyan
         }
 
