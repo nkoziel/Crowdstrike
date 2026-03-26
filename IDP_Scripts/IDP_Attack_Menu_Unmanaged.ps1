@@ -1,4 +1,4 @@
-﻿﻿﻿﻿# ============================================================
+﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
