@@ -2,7 +2,7 @@
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
-#  Version: 2.7 (2026-03-26)
+#  Version: 2.8 (2026-03-26)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
@@ -31,6 +31,24 @@ if ($missing.Count -gt 0) {
     Write-Host '    set ENV_DT=<DT IP>' -ForegroundColor Gray
     pause
     exit 1
+}
+
+# --- Validate IPs: hostnames won't work for PtH child processes ---
+$ipPattern = '^\d+\.\d+\.\d+\.\d+$'
+foreach ($varName in @("ENV_DC_IP", "ENV_BL", "ENV_DT")) {
+    $val = [Environment]::GetEnvironmentVariable($varName)
+    if ($val -and $val -notmatch $ipPattern) {
+        Write-Host "[!] $varName is set to hostname: $val (need IP address)" -ForegroundColor Red
+        $newVal = Read-Host "    Enter IP for $varName"
+        if ($newVal -match $ipPattern) {
+            [Environment]::SetEnvironmentVariable($varName, $newVal)
+            Set-Item -Path "env:$varName" -Value $newVal
+            Write-Host "    [+] $varName = $newVal" -ForegroundColor Green
+        } else {
+            Write-Host "    [!] Invalid IP. Exiting." -ForegroundColor Red
+            pause; exit 1
+        }
+    }
 }
 
 # Hash files saved between steps (live extraction, never hardcoded)
@@ -62,7 +80,7 @@ function Get-SvcRunbookHash {
     return $null
 }
 
-$scriptVersion = "2.7"
+$scriptVersion = "2.8"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
