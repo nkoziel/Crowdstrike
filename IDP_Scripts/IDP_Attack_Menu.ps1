@@ -1,4 +1,4 @@
-﻿# ============================================================
+﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -10,7 +10,7 @@
 # set ENV_BL=<BL IP address>
 # set ENV_DT=<DT IP address>
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $idpDir = "C:\IDP_Files"
 $mimiExe = "$idpDir\Mimikatz\x64\mimikatz.exe"
 
