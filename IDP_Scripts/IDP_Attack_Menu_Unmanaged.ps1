@@ -2,6 +2,7 @@
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
+#  Version: 2.7 (2026-03-26)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
@@ -61,6 +62,9 @@ function Get-SvcRunbookHash {
     return $null
 }
 
+$scriptVersion = "2.7"
+
+Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
 if (Test-Path $clarkHashFile) {
     Write-Host "[+] clark.monroe NTLM: $(Get-Content $clarkHashFile -First 1)" -ForegroundColor Green
