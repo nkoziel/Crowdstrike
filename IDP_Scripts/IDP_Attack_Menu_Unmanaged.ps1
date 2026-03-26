@@ -2,7 +2,7 @@
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
-#  Version: 3.1 (2026-03-26)
+#  Version: 3.2 (2026-03-26)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
@@ -15,6 +15,16 @@ $ErrorActionPreference = "Continue"
 $idpDir = "C:\IDP_Files"
 $mimiExe = "$idpDir\Mimikatz\x64\mimikatz.exe"
 $wordlistFile = "$idpDir\wordlist.txt"
+
+# --- Load saved IP overrides (persisted across launches) ---
+$ipConfigFile = "$idpDir\ip_config.txt"
+if (Test-Path $ipConfigFile) {
+    Get-Content $ipConfigFile | ForEach-Object {
+        if ($_ -match '^(\w+)=(.+)$') {
+            Set-Item -Path "env:$($Matches[1])" -Value $Matches[2]
+        }
+    }
+}
 
 # --- Validate env vars on startup ---
 $missing = @()
@@ -34,21 +44,28 @@ if ($missing.Count -gt 0) {
 }
 
 # --- Validate IPs: hostnames won't work for PtH child processes ---
+# Saves overrides to ip_config.txt so you only enter them ONCE
 $ipPattern = '^\d+\.\d+\.\d+\.\d+$'
+$needSave = $false
 foreach ($varName in @("ENV_DC_IP", "ENV_BL", "ENV_DT")) {
     $val = [Environment]::GetEnvironmentVariable($varName)
     if ($val -and $val -notmatch $ipPattern) {
         Write-Host "[!] $varName is set to hostname: $val (need IP address)" -ForegroundColor Red
         $newVal = Read-Host "    Enter IP for $varName"
         if ($newVal -match $ipPattern) {
-            [Environment]::SetEnvironmentVariable($varName, $newVal)
             Set-Item -Path "env:$varName" -Value $newVal
             Write-Host "    [+] $varName = $newVal" -ForegroundColor Green
+            $needSave = $true
         } else {
             Write-Host "    [!] Invalid IP. Exiting." -ForegroundColor Red
             pause; exit 1
         }
     }
+}
+# Save all current IPs so next launch skips the prompts
+if ($needSave) {
+    @("ENV_DC_IP=$env:ENV_DC_IP", "ENV_BL=$env:ENV_BL", "ENV_DT=$env:ENV_DT", "ENV_DOMAIN=$env:ENV_DOMAIN") | Out-File -FilePath $ipConfigFile -Encoding ASCII
+    Write-Host "[+] IPs saved to $ipConfigFile (won't ask again)" -ForegroundColor Green
 }
 
 # Hash files saved between steps (live extraction, never hardcoded)
@@ -80,7 +97,7 @@ function Get-SvcRunbookHash {
     return $null
 }
 
-$scriptVersion = "3.1"
+$scriptVersion = "3.2"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
