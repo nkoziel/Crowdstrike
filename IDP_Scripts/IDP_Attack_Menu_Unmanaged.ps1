@@ -1,7 +1,7 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  CrowdStrike NGSIEM + Identity Protection Demo
-#  Version: 4.0 (2026-03-26)
+#  Version: 4.1 (2026-03-26)
 #
 #  Attack narrative:
 #    1. Phishing campaign (narrative - logs from log generator)
@@ -27,6 +27,7 @@ $wordlistFile = "$idpDir\wordlist.txt"
 # --- Load saved IP overrides (persisted across launches) ---
 $ipConfigFile = "$idpDir\ip_config.txt"
 if (Test-Path $ipConfigFile) {
+    Write-Host "[*] Loading saved config from $ipConfigFile" -ForegroundColor Gray
     Get-Content $ipConfigFile | ForEach-Object {
         if ($_ -match '^(\w+)=(.+)$') {
             Set-Item -Path "env:$($Matches[1])" -Value $Matches[2]
@@ -34,12 +35,14 @@ if (Test-Path $ipConfigFile) {
     }
 }
 
+# --- Debug: show what env vars are set ---
+Write-Host "[*] Env check: DOMAIN=$env:ENV_DOMAIN DC=$env:ENV_DC_IP DT=$env:ENV_DT UBUNTU=$env:ENV_UBUNTU FORTI=$env:ENV_FORTI_IP" -ForegroundColor DarkGray
+
 # --- Validate env vars on startup ---
 $missing = @()
 if (-not $env:ENV_DOMAIN)    { $missing += "ENV_DOMAIN" }
 if (-not $env:ENV_DC_IP)     { $missing += "ENV_DC_IP" }
 if (-not $env:ENV_DT)        { $missing += "ENV_DT" }
-if (-not $env:ENV_FORTI_IP)  { $missing += "ENV_FORTI_IP" }
 if (-not $env:ENV_UBUNTU)    { $missing += "ENV_UBUNTU" }
 if ($missing.Count -gt 0) {
     Write-Host "[!] Missing environment variables: $($missing -join ', ')" -ForegroundColor Red
@@ -47,10 +50,14 @@ if ($missing.Count -gt 0) {
     Write-Host '    set ENV_DOMAIN=lab.yourdomain.com' -ForegroundColor Gray
     Write-Host '    set ENV_DC_IP=<DC IP>' -ForegroundColor Gray
     Write-Host '    set ENV_DT=<DT IP>' -ForegroundColor Gray
-    Write-Host '    set ENV_FORTI_IP=<FortiGate IP>' -ForegroundColor Gray
     Write-Host '    set ENV_UBUNTU=<Ubuntu IP>' -ForegroundColor Gray
     pause
     exit 1
+}
+# Default FortiGate IP (simulated — no real device)
+if (-not $env:ENV_FORTI_IP) {
+    $env:ENV_FORTI_IP = "10.200.99.1"
+    Write-Host "[*] ENV_FORTI_IP not set, using default: $env:ENV_FORTI_IP (simulated)" -ForegroundColor Gray
 }
 
 # --- Validate IPs: hostnames won't work for PtH child processes ---
@@ -132,7 +139,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "4.0"
+$scriptVersion = "4.1"
 
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT" -ForegroundColor Green
