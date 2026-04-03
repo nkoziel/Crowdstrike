@@ -810,23 +810,40 @@ MIMECAST_SAMPLES = [
     # TRIGGER (delivery): Second phishing delivered
     '{"datetime":"2024-12-16T18:16:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":720,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
+    # -----------------------------------------------------------------
+    # SAME phishing campaign — additional recipients (same MsgId for
+    # NGSIEM correlation / Falcon graph linking)
+    # -----------------------------------------------------------------
+
+    # .xlsm phish ALSO sent to {{PROTECT_EMAIL}} (same MsgId as atk001)
+    '{"datetime":"2024-12-16T18:15:05+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","attachments":"Q4_Benefits_Update.xlsm","AttCnt":1,"AttSz":185000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":12,"SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.77","MsgSz":195000}',
+
+    # .xlsm delivery to {{PROTECT_EMAIL}}
+    '{"datetime":"2024-12-16T18:15:07+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00891","MsgId":"<atk001@securecorp-benefits.com>","Subject":"Q4 Benefits Update - Action Required","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":910,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
+    # .html phish ALSO sent to {{DETECT_EMAIL}} (same MsgId as atk002)
+    '{"datetime":"2024-12-16T18:16:05+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"password_reset_form.html","AttCnt":1,"AttSz":8200,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":25,"SpfResult":"neutral","DkimResult":"pass","IP":"104.20.145.30","MsgSz":12800}',
+
+    # .html delivery to {{DETECT_EMAIL}}
+    '{"datetime":"2024-12-16T18:16:08+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00892","MsgId":"<atk002@it-helpdesk-portal.com>","Subject":"Password Expiry Notice - Immediate Action","headerFrom":"noreply@it-helpdesk-portal.com","Sender":"noreply@it-helpdesk-portal.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":780,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
+
     # =====================================================================
     # NORMAL EMAIL — Benign traffic for scenario baseline
     # =====================================================================
 
-    # [25] Newsletter subscription
+    # [29] Newsletter subscription
     '{"datetime":"2024-12-16T17:35:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<newsletter-001@techdigest.example.com>","Subject":"Tech Digest Weekly - Dec 16 Edition","headerFrom":"noreply@techdigest.example.com","Sender":"noreply@techdigest.example.com","senderEnvelope":"bounce@techdigest.example.com","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":5,"SpamInfo":"clean, bulk sender","SpfResult":"pass","DkimResult":"pass","IP":"198.51.100.30","Dir":"Inbound","MsgSz":82000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
-    # [26] Calendar invite
+    # [30] Calendar invite
     '{"datetime":"2024-12-16T17:36:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<calendar-001@{{LAB_DOMAIN}}>","Subject":"Accepted: Weekly Standup - Tuesday 10am","headerFrom":"{{PROTECT_EMAIL}}","Sender":"{{PROTECT_EMAIL}}","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"invite.ics","AttCnt":1,"AttSz":2800,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":8500}',
 
-    # [27] Okta password reset notification
+    # [31] Okta password reset notification
     '{"datetime":"2024-12-16T17:37:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<okta-reset-001@okta.example.com>","Subject":"Your password was successfully changed","headerFrom":"noreply@okta.example.com","Sender":"noreply@okta.example.com","senderEnvelope":"noreply@okta.example.com","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_128_GCM_SHA256","SpamScore":0,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"52.21.30.15","Dir":"Inbound","MsgSz":12400,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
-    # [28] Automated report delivery
+    # [32] Automated report delivery
     '{"datetime":"2024-12-16T17:38:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","MsgId":"<report-001@{{LAB_DOMAIN}}>","Subject":"Daily SIEM Summary Report - Dec 16","headerFrom":"siem-reports@{{LAB_DOMAIN}}","Sender":"siem-reports@{{LAB_DOMAIN}}","Rcpt":"soc-team@{{LAB_DOMAIN}}","Act":"Acc","attachments":"daily_siem_summary_2024-12-16.pdf","AttCnt":1,"AttSz":345000,"Route":"internal","Dir":"Internal","Hld":"N","HldRsn":"N/A","MsgSz":352000}',
 
-    # [29] Vendor invoice (legitimate external)
+    # [33] Vendor invoice (legitimate external)
     '{"datetime":"2024-12-16T17:39:00+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<invoice-001@acme-corp.com>","Subject":"Invoice #ACM-2024-1247 - December Services","headerFrom":"billing@acme-corp.com","Sender":"billing@acme-corp.com","senderEnvelope":"billing@acme-corp.com","Rcpt":"accounts@{{LAB_DOMAIN}}","Act":"Acc","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":2,"SpamInfo":"clean","SpfResult":"pass","DkimResult":"pass","IP":"203.0.113.50","Dir":"Inbound","MsgSz":95000,"RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # =====================================================================
@@ -835,10 +852,10 @@ MIMECAST_SAMPLES = [
     # Same sender lets NGSIEM correlate generated + real detections
     # =====================================================================
 
-    # [30] TRIGGER (process): tstark phishing with malicious link — accepted to DT
+    # [34] TRIGGER (process): tstark phishing with malicious link — accepted to DT
     '{"datetime":"2024-12-16T18:14:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00893","MsgId":"<atk003@workshop.cs-labs.net>","Subject":"Stark Industries - Confidential Project Files","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","attachments":"Project_Files_Q4.zip","AttCnt":1,"AttSz":342000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":8,"SpfResult":"neutral","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","MsgSz":355000}',
 
-    # [31] TRIGGER (delivery): tstark phishing delivered to DT
+    # [35] TRIGGER (delivery): tstark phishing delivered to DT
     '{"datetime":"2024-12-16T18:14:03+0000","aCode":"acc1001","acc":"C0A0","type":"delivery","processingId":"proc-2024-atk-00893","MsgId":"<atk003@workshop.cs-labs.net>","Subject":"Stark Industries - Confidential Project Files","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{DETECT_EMAIL}}","Act":"Acc","Dlv":"Delivered","DlvTo":"mx01.{{LAB_DOMAIN}}","TlsVer":"TLSv1.3","Latency":680,"Attempt":1,"Dir":"Inbound","delivered":"true","RejType":"N/A","RejCode":"N/A","RejInfo":"N/A"}',
 
     # =====================================================================
@@ -846,16 +863,16 @@ MIMECAST_SAMPLES = [
     # Same tstark@workshop.cs-labs.net sender for NGSIEM correlation
     # =====================================================================
 
-    # [32] tstark phishing to helpdesk@ — BLOCKED by Mimecast URL scan
+    # [36] tstark phishing to helpdesk@ — BLOCKED by Mimecast URL scan
     '{"datetime":"2024-12-16T18:13:00+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00894","MsgId":"<atk004@workshop.cs-labs.net>","Subject":"Urgent: Review Security Patch","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"helpdesk@{{LAB_DOMAIN}}","Act":"Hld","attachments":"Security_Patch_v2.zip","AttCnt":1,"AttSz":275000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"Y","HldRsn":"URL scan detected suspicious content in attachment","SpamScore":45,"SpfResult":"neutral","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","MsgSz":290000}',
 
-    # [33] tstark phishing to info@ — BLOCKED by spam filter
+    # [37] tstark phishing to info@ — BLOCKED by spam filter
     '{"datetime":"2024-12-16T18:13:10+0000","aCode":"acc1001","acc":"C0A0","type":"receipt","MsgId":"<atk005@workshop.cs-labs.net>","Subject":"Confidential: Project Jericho Update","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","senderEnvelope":"tstark@workshop.cs-labs.net","Rcpt":"info@{{LAB_DOMAIN}}","Act":"Rej","TlsVer":"TLSv1.3","Cphr":"TLS_AES_256_GCM_SHA384","SpamScore":72,"SpamInfo":"virus score=clean, spam score=72, bulk sender, suspicious sender","SpfResult":"fail","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","Dir":"Inbound","MsgSz":310000,"RejType":"spam","RejCode":"550","RejInfo":"Message rejected: suspicious sender pattern detected"}',
 
-    # [34] tstark phishing to BL — delivered (user doesn't click)
+    # [38] tstark phishing to BL — delivered (user doesn't click)
     '{"datetime":"2024-12-16T18:13:30+0000","aCode":"acc1001","acc":"C0A0","type":"process","processingId":"proc-2024-atk-00895","MsgId":"<atk006@workshop.cs-labs.net>","Subject":"Workshop Files - Please Review ASAP","headerFrom":"tstark@workshop.cs-labs.net","Sender":"tstark@workshop.cs-labs.net","Rcpt":"{{PROTECT_EMAIL}}","Act":"Acc","attachments":"Workshop_Review_Notes.zip","AttCnt":1,"AttSz":198000,"numberAttachments":1,"Route":"inbound","Dir":"Inbound","Hld":"N","HldRsn":"N/A","SpamScore":15,"SpfResult":"neutral","DkimResult":"none","IP":"{{ATTACKER_EXT_IP}}","MsgSz":210000}',
 
-    # [35] securecorp phishing to generic soc-team@ — BLOCKED by AV
+    # [39] securecorp phishing to generic soc-team@ — BLOCKED by AV
     '{"datetime":"2024-12-16T18:13:40+0000","aCode":"acc1001","acc":"C0A0","type":"av","MsgId":"<atk007@securecorp-benefits.com>","Subject":"Q4 Benefits - Final Reminder","headerFrom":"hr-admin@securecorp-benefits.com","Sender":"hr-admin@securecorp-benefits.com","Rcpt":"soc-team@{{LAB_DOMAIN}}","Act":"Rej","FileName":"Benefits_Enrollment_Final.xlsm","FileExt":"xlsm","FileSz":195000,"Virus":"W97M/Downloader.AKQ","ScanResult":"malicious","Route":"inbound","Dir":"Inbound","IP":"198.51.100.77","SpamScore":22,"SpfResult":"pass","DkimResult":"pass","msg":"Macro malware detected in Excel attachment — rejected"}',
 ]
 
@@ -891,22 +908,22 @@ SCENARIO_PHASES = [
         "pause": False,
         "logs": [
             ("fortinet", 67),   # Protect: Slack
-            ("mimecast", 25),   # Newsletter to {{DETECT_EMAIL}}
+            ("mimecast", 29),   # Newsletter to {{DETECT_EMAIL}}
             ("fortinet", 68),   # Protect: Teams
             ("fortinet", 77),   # Ubuntu: NTP sync
             ("fortinet", 73),   # Detect: AWS Console
-            ("mimecast", 26),   # Calendar invite (internal)
+            ("mimecast", 30),   # Calendar invite (internal)
             ("fortinet", 69),   # Protect: Zoom
             ("fortinet", 74),   # Detect: GitHub
-            ("mimecast", 27),   # Okta password reset
+            ("mimecast", 31),   # Okta password reset
             ("fortinet", 70),   # Protect: Salesforce
             ("fortinet", 78),   # Ubuntu: OCSP check
             ("fortinet", 75),   # Detect: Google Search
-            ("mimecast", 29),   # Vendor invoice
+            ("mimecast", 33),   # Vendor invoice
             ("fortinet", 71),   # Protect: Windows Update
             ("fortinet", 79),   # Ubuntu: apt mirror
             ("fortinet", 76),   # Detect: O365 Outlook
-            ("mimecast", 28),   # Automated SIEM report
+            ("mimecast", 32),   # Automated SIEM report
             ("fortinet", 72),   # Protect: Dropbox
             ("fortinet", 80),   # Unmanaged: SMB file share
             ("fortinet", 81),   # Unmanaged: LDAP auth
@@ -958,19 +975,23 @@ SCENARIO_PHASES = [
         "pause": False,
         "logs": [
             ("mimecast", 19),   # Legit: Internal IT notification
-            ("mimecast", 33),   # BLOCKED: tstark to info@ (spam filter)
-            ("mimecast", 32),   # BLOCKED: tstark to helpdesk@ (URL scan)
-            ("mimecast", 35),   # BLOCKED: securecorp to soc-team@ (AV)
+            ("mimecast", 37),   # BLOCKED: tstark to info@ (spam filter)
+            ("mimecast", 36),   # BLOCKED: tstark to helpdesk@ (URL scan)
+            ("mimecast", 39),   # BLOCKED: securecorp to soc-team@ (AV)
             ("mimecast", 9),    # BLOCKED: .xlsm from securecorp -> {{DETECT_EMAIL}} (AV)
             ("mimecast", 10),   # BLOCKED: .html from helpdesk -> {{PROTECT_EMAIL}} (AV)
             ("mimecast", 20),   # Legit: External partner email
-            ("mimecast", 34),   # tstark to BL — delivered (not clicked)
-            ("mimecast", 21),   # TRIGGER: securecorp .xlsm process → DT
-            ("mimecast", 22),   # TRIGGER: securecorp .xlsm delivered → DT
-            ("mimecast", 23),   # TRIGGER: helpdesk .html process → BL
-            ("mimecast", 24),   # TRIGGER: helpdesk .html delivered → BL
-            ("mimecast", 30),   # TRIGGER: tstark .zip process → DT
-            ("mimecast", 31),   # TRIGGER: tstark .zip delivered → DT
+            ("mimecast", 38),   # tstark to BL - delivered (not clicked)
+            ("mimecast", 21),   # TRIGGER: securecorp .xlsm process -> DT
+            ("mimecast", 22),   # TRIGGER: securecorp .xlsm delivered -> DT
+            ("mimecast", 25),   # TRIGGER: securecorp .xlsm process -> BL (same MsgId)
+            ("mimecast", 26),   # TRIGGER: securecorp .xlsm delivered -> BL (same MsgId)
+            ("mimecast", 23),   # TRIGGER: helpdesk .html process -> BL
+            ("mimecast", 24),   # TRIGGER: helpdesk .html delivered -> BL
+            ("mimecast", 27),   # TRIGGER: helpdesk .html process -> DT (same MsgId)
+            ("mimecast", 28),   # TRIGGER: helpdesk .html delivered -> DT (same MsgId)
+            ("mimecast", 34),   # TRIGGER: tstark .zip process -> DT
+            ("mimecast", 35),   # TRIGGER: tstark .zip delivered -> DT
         ],
     },
     # Phase 4: Unmanaged Internal Recon
