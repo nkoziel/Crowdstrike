@@ -120,7 +120,7 @@ Start-Sleep -Seconds 2
 function Show-Menu {
     Clear-Host
     Write-Host
-    Write-Host "================ Identity Attack Demo - Unmanaged Host ================" -ForegroundColor Cyan
+    Write-Host "================ Identity Attack Demo - Unmanaged Host  [v$scriptVersion] ================" -ForegroundColor Cyan
     Write-Host
     Write-Host "  Story: phishing > Fortinet exploit > dump unmanaged > crack > RDP to DT > DCSync > cloud" -ForegroundColor DarkGray
     Write-Host
