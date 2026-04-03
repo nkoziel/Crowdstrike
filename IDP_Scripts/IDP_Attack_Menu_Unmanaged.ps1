@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.3"
+$scriptVersion = "5.3.1"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -642,10 +642,19 @@ try {
 
                         # Check if hashcat is available
                         $hashcatPath = $null
-                        @("$idpDir\hashcat.exe", "hashcat.exe", "hashcat") | ForEach-Object {
-                            if (-not $hashcatPath -and (Get-Command $_ -ErrorAction SilentlyContinue)) { $hashcatPath = $_ }
+                        # Search common locations
+                        $hashcatSearchPaths = @(
+                            "$idpDir\hashcat.exe"
+                            "$idpDir\hashcat-6.2.6\hashcat.exe"
+                        )
+                        # Also check any hashcat-* subdirectory
+                        Get-ChildItem -Path $idpDir -Directory -Filter "hashcat*" -ErrorAction SilentlyContinue | ForEach-Object {
+                            $hashcatSearchPaths += "$($_.FullName)\hashcat.exe"
                         }
-                        if (-not $hashcatPath -and (Test-Path "$idpDir\hashcat.exe")) { $hashcatPath = "$idpDir\hashcat.exe" }
+                        foreach ($hp in $hashcatSearchPaths) {
+                            if (-not $hashcatPath -and (Test-Path $hp)) { $hashcatPath = $hp }
+                        }
+                        if (-not $hashcatPath -and (Get-Command "hashcat.exe" -ErrorAction SilentlyContinue)) { $hashcatPath = "hashcat.exe" }
 
                         if ($hashcatPath) {
                             Write-Host "  [+] hashcat found: $hashcatPath" -ForegroundColor Green
