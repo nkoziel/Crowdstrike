@@ -8,8 +8,8 @@
 #    2. Fortinet CVE exploitation + brute force to unmanaged (narrative)
 #    3. Recon + credential dump on UNMANAGED host (active)
 #    4. Crack demo hash + kerbrute spray (active)
-#    5. Remote dump on DT via WinRM (active — dead end, no DA)
-#    6. Kerberoast on DT + crack TGS hash (active — triggers IDP)
+#    5. Remote dump on DT via WinRM (active - dead end, no DA)
+#    6. Kerberoast on DT + crack TGS hash (active - triggers IDP)
 #    7. Lateral movement to Ubuntu - cloud detections (active)
 # ============================================================
 
@@ -393,10 +393,10 @@ public class CryptoMD4 {
                 "The attacker uses the cracked demo password to remotely"
                 "execute mimikatz on DT via WinRM (Invoke-Command)."
                 ""
-                "DT has CrowdStrike Falcon in DETECT mode — triggers detections."
+                "DT has CrowdStrike Falcon in DETECT mode - triggers detections."
                 ""
                 "Expected result: only local accounts (demo, bob, ansible-user)."
-                "No domain admin cached — dead end. Pivot to Kerberoasting next."
+                "No domain admin cached - dead end. Pivot to Kerberoasting next."
             ) -Detection "CrowdStrike: LSASS access, credential dump on managed host"
 
             # --- Build credential ---
@@ -422,7 +422,7 @@ public class CryptoMD4 {
             Write-Host "  [*] Testing WinRM connectivity to $env:ENV_DT..." -ForegroundColor White
             try {
                 $testResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock { hostname } -ErrorAction Stop
-                Write-Host "  [+] WinRM OK — connected to: $testResult" -ForegroundColor Green
+                Write-Host "  [+] WinRM OK - connected to: $testResult" -ForegroundColor Green
             } catch {
                 Write-Host "  [!] WinRM failed: $_" -ForegroundColor Red
                 Write-Host
@@ -458,7 +458,7 @@ public class CryptoMD4 {
                 } else {
                     Write-Host "  [-] Only local accounts found (demo, bob, ansible-user)." -ForegroundColor Yellow
                     Write-Host "  [-] No domain admin cached. Dead end." -ForegroundColor Red
-                    Write-Host "  [*] Next: Step 6 — Kerberoast to target service accounts." -ForegroundColor Cyan
+                    Write-Host "  [*] Next: Step 6 - Kerberoast to target service accounts." -ForegroundColor Cyan
                 }
             } catch {
                 Write-Host "  [!] Remote execution failed: $_" -ForegroundColor Red
@@ -467,16 +467,16 @@ public class CryptoMD4 {
         }
 
         # ================================================================
-        # STEP 6: KERBEROAST ON DT + CRACK TGS (Active — Remote)
+        # STEP 6: KERBEROAST ON DT + CRACK TGS (Active - Remote)
         # ================================================================
         '6' {
             Show-StepBanner -Step "6" -Title "KERBEROAST ON DT + CRACK TGS HASH" -Lines @(
-                "Local dump on DT was a dead end — no domain admin."
+                "Local dump on DT was a dead end - no domain admin."
                 "The attacker pivots to KERBEROASTING."
                 ""
                 "Kerberoasting requests TGS tickets for service accounts"
                 "with SPNs in Active Directory. The ticket is encrypted"
-                "with the service account's password hash — crackable offline."
+                "with the service account's password hash - crackable offline."
                 ""
                 "Any authenticated domain user can request these tickets."
                 "CrowdStrike IDP detects this pattern on the DC."
@@ -505,7 +505,7 @@ public class CryptoMD4 {
             Write-Host "  [*] Testing WinRM connectivity to $env:ENV_DT..." -ForegroundColor White
             try {
                 $testResult = Invoke-Command -ComputerName $env:ENV_DT -Credential $cred -ScriptBlock { hostname } -ErrorAction Stop
-                Write-Host "  [+] WinRM OK — connected to: $testResult" -ForegroundColor Green
+                Write-Host "  [+] WinRM OK - connected to: $testResult" -ForegroundColor Green
             } catch {
                 Write-Host "  [!] WinRM failed: $_" -ForegroundColor Red
                 Write-Host "  [*] Run Step 5 first to verify WinRM connectivity." -ForegroundColor Yellow
